@@ -194,6 +194,64 @@ io.on('connection', (socket) => {
     socket.to(roomCode).emit('state_sync', { snapshot, currentTurnSeatIdx: room.mp.currentTurnSeatIdx });
   });
 
+  // ============================================================
+  // 終極密碼小遊戲 連線同步（獨立於大富翁棋盤的房間系統，共用同一套 room）
+  // 密碼由伺服器保管，玩家永遠看不到答案，送出猜測由伺服器判定後廣播結果
+  // ============================================================
+
+  socket.on('password_start_game', ({ rangeMax }, callback) => {
+    const roomCode = socket.data.roomCode;
+    const room = rooms.get(roomCode);
+    if (!room) return callback && callback({ ok:false, error:'找不到房間' });
+    if (room.hostId !== socket.id) return callback && callback({ ok:false, error:'只有房主能開始' });
+    if (room.players.size < 2) return callback && callback({ ok:false, error:'至少需要2位玩家才能開始' });
+
+    const validRange = [50, 100, 200].includes(rangeMax) ? rangeMax : 100;
+    const seatOrder = Array.from(room.players.values()).map((p, i) => ({ id: p.id, name: p.name, seatIndex: i }));
+    const target = 1 + Math.floor(Math.random() * validRange);
+
+    room.pw = {
+      seatOrder, currentTurnSeatIdx: 0, low: 1, high: validRange, rangeMax: validRange, target,
+    };
+    room.started = true;
+
+    io.to(roomCode).emit('password_game_start', { seatOrder, rangeMax: validRange, startSeatIdx: 0 });
+    console.log(`[終極密碼開局] ${roomCode} 範圍1~${validRange} 座位:`, seatOrder.map(s=>s.name).join(', '));
+    callback && callback({ ok:true });
+  });
+
+  socket.on('password_submit_guess', ({ guess }, callback) => {
+    const roomCode = socket.data.roomCode;
+    const room = rooms.get(roomCode);
+    if (!room || !room.pw) return callback && callback({ ok:false, error:'尚未開局' });
+    const pw = room.pw;
+    const seat = pw.seatOrder[pw.currentTurnSeatIdx];
+    if (!seat || seat.id !== socket.id) return callback && callback({ ok:false, error:'還沒輪到你' });
+    if (typeof guess !== 'number' || guess < pw.low || guess > pw.high) {
+      return callback && callback({ ok:false, error:'猜測超出目前範圍' });
+    }
+
+    let hint, bingo = false;
+    if (guess === pw.target) { hint = 'bingo'; bingo = true; }
+    else if (guess < pw.target) { hint = 'low'; pw.low = guess + 1; }
+    else { hint = 'high'; pw.high = guess - 1; }
+
+    const guesserName = seat.name;
+    let nextSeatIdx = pw.currentTurnSeatIdx;
+    if (!bingo) {
+      nextSeatIdx = (pw.currentTurnSeatIdx + 1) % pw.seatOrder.length;
+      pw.currentTurnSeatIdx = nextSeatIdx;
+    }
+
+    io.to(roomCode).emit('password_guess_result', {
+      guesserSeatId: seat.id, guesserName, guess, hint, bingo,
+      low: pw.low, high: pw.high, nextSeatIdx,
+      target: bingo ? pw.target : undefined,
+    });
+    console.log(`[終極密碼] ${roomCode} ${guesserName} 猜 ${guess} -> ${hint}`);
+    callback && callback({ ok:true });
+  });
+
   // ---- 簡易測試訊息廣播（驗證即時同步用，之後會換成真正的遊戲事件） ----
   socket.on('test_ping', (msg) => {
     const roomCode = socket.data.roomCode;
@@ -227,6 +285,9 @@ io.on('connection', (socket) => {
 
     if (room.mp) {
       io.to(roomCode).emit('mp_player_left', {});
+    }
+    if (room.pw) {
+      io.to(roomCode).emit('pw_player_left', {});
     }
 
     broadcastRoomState(roomCode);
