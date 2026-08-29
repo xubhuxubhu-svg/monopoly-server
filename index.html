@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>連線測試 - 萌樂大富翁</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #bfe4f5, #eaf7ee);
+    font-family: "Microsoft JhengHei", sans-serif;
+  }
+  .card {
+    background: #fff; border-radius: 16px; padding: 28px 32px; box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+    width: 380px; max-width: 92vw;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; color: #333; }
+  .sub { font-size: 12px; color: #888; margin-bottom: 18px; }
+  input {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1.5px solid #ddd; font-size: 15px;
+    margin-bottom: 10px;
+  }
+  button {
+    width: 100%; padding: 10px; border-radius: 8px; border: none; font-weight: bold; font-size: 14px;
+    cursor: pointer; margin-bottom: 8px; color: #fff;
+  }
+  .btn-primary { background: #5a9578; }
+  .btn-primary:hover { background: #4a8468; }
+  .btn-secondary { background: #4a7fd6; }
+  .btn-secondary:hover { background: #3a6fc6; }
+  .btn-danger { background: #d65a5a; }
+  #status { font-size: 12px; color: #999; margin-top: 6px; min-height: 16px; }
+  #roomInfo { display:none; }
+  .room-code { font-size: 28px; font-weight: bold; letter-spacing: 4px; text-align:center;
+    background:#f0f7f2; border-radius:10px; padding:10px; margin-bottom:12px; color:#2a5a3a; }
+  .player-list { list-style:none; padding:0; margin: 0 0 12px; }
+  .player-list li { padding: 8px 10px; background:#f7f7f7; border-radius:8px; margin-bottom:6px; font-size:14px;
+    display:flex; justify-content:space-between; }
+  .tag { font-size:11px; padding:2px 6px; border-radius:5px; background:#ffd66b; color:#7a5a00; font-weight:bold; }
+  .tag.ready { background:#8bd68b; color:#1a4a1a; }
+  .divider { height:1px; background:#eee; margin: 14px 0; }
+  #pingLog { font-size:11px; color:#666; max-height:80px; overflow-y:auto; background:#fafafa; border-radius:6px; padding:6px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🎲 萌樂大富翁 - 連線測試</h1>
+  <div class="sub">驗證房間建立 / 加入 / 玩家同步是否正常</div>
+
+  <div id="loginView">
+    <input id="nameInput" placeholder="輸入你的暱稱" maxlength="12" value="玩家">
+    <button class="btn-primary" onclick="createRoom()">🏠 建立新房間</button>
+    <div class="divider"></div>
+    <input id="codeInput" placeholder="輸入4位房間代碼" maxlength="4" style="text-transform:uppercase;">
+    <button class="btn-secondary" onclick="joinRoom()">🚪 加入房間</button>
+    <div id="status"></div>
+  </div>
+
+  <div id="roomInfo">
+    <div class="room-code" id="roomCodeDisplay">----</div>
+    <ul class="player-list" id="playerList"></ul>
+    <button class="btn-secondary" id="readyBtn" onclick="toggleReady()">✅ 準備</button>
+    <button class="btn-primary" id="startBtn" onclick="startGame()" style="display:none;">🚀 開始遊戲（房主）</button>
+    <button class="btn-secondary" onclick="sendPing()">📡 測試即時訊息</button>
+    <div id="pingLog"></div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const socket = io();
+  let myId = null;
+  let currentRoom = null;
+
+  socket.on('connect', () => {
+    myId = socket.id;
+    setStatus('已連線到伺服器 ✓ (id: ' + myId.slice(0,6) + ')');
+  });
+  socket.on('disconnect', () => setStatus('與伺服器斷線'));
+
+  function setStatus(msg) { document.getElementById('status').innerText = msg; }
+
+  function createRoom() {
+    const name = document.getElementById('nameInput').value || '玩家';
+    socket.emit('create_room', { playerName: name }, (res) => {
+      if (!res.ok) return setStatus('建立失敗: ' + res.error);
+      currentRoom = res.roomCode;
+      showRoom(res.roomCode, res.state);
+    });
+  }
+
+  function joinRoom() {
+    const name = document.getElementById('nameInput').value || '玩家';
+    const code = document.getElementById('codeInput').value.toUpperCase();
+    socket.emit('join_room', { roomCode: code, playerName: name }, (res) => {
+      if (!res.ok) return setStatus('加入失敗: ' + res.error);
+      currentRoom = res.roomCode;
+      showRoom(res.roomCode, res.state);
+    });
+  }
+
+  function showRoom(code, state) {
+    document.getElementById('loginView').style.display = 'none';
+    document.getElementById('roomInfo').style.display = 'block';
+    document.getElementById('roomCodeDisplay').innerText = code;
+    renderPlayers(state);
+  }
+
+  function renderPlayers(state) {
+    const list = document.getElementById('playerList');
+    list.innerHTML = '';
+    state.players.forEach(p => {
+      const li = document.createElement('li');
+      const isMe = p.id === myId;
+      li.innerHTML = `<span>${p.isHost ? '👑 ' : ''}${p.name}${isMe ? ' (你)' : ''}</span>
+        <span class="tag ${p.ready ? 'ready' : ''}">${p.ready ? '已準備' : '未準備'}</span>`;
+      list.appendChild(li);
+    });
+    const me = state.players.find(p => p.id === myId);
+    document.getElementById('startBtn').style.display = (me && me.isHost) ? 'block' : 'none';
+  }
+
+  socket.on('room_state', (state) => renderPlayers(state));
+  socket.on('game_started', () => {
+    document.getElementById('pingLog').innerHTML += '<div>🚀 遊戲開始了！</div>';
+  });
+  socket.on('test_pong', (data) => {
+    const log = document.getElementById('pingLog');
+    const who = data.from === myId ? '我' : data.from.slice(0,6);
+    log.innerHTML += `<div>[${new Date(data.at).toLocaleTimeString()}] ${who}: ${data.msg}</div>`;
+    log.scrollTop = log.scrollHeight;
+  });
+
+  function toggleReady() { socket.emit('toggle_ready'); }
+  function startGame() { socket.emit('start_game'); }
+  function sendPing() { socket.emit('test_ping', '哈囉！這是即時同步測試 ' + Math.floor(Math.random()*1000)); }
+</script>
+</body>
+</html>
