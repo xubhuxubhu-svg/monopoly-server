@@ -18,7 +18,7 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 
 // 提供靜態測試前端（/public 資料夾），方便直接用瀏覽器測試整套連線流程
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname));
 app.get('/health', (req, res) => res.json({ ok: true, rooms: rooms.size }));
 
 // ---------------- 房間資料結構 ----------------
