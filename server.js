@@ -173,6 +173,14 @@ io.on('connection', (socket) => {
     callback && callback({ ok:true, value });
   });
 
+  // 即時事件轉發（不用等回合結束）：目前用在「開始施工」「施工加速」，一收到就馬上轉給房間其他人
+  socket.on('instant_action', (action) => {
+    const roomCode = socket.data.roomCode;
+    const room = rooms.get(roomCode);
+    if (!room || !room.mp) return;
+    socket.to(roomCode).emit('instant_action', action);
+  });
+
   // 目前輪到的玩家跑完整個回合後，把最終狀態快照 + 下一位座位廣播給房間其他人
   socket.on('state_sync', ({ snapshot, nextSeatIdx }) => {
     const roomCode = socket.data.roomCode;
