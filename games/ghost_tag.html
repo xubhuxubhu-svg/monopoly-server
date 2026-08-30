@@ -275,6 +275,7 @@
     document.getElementById('endSub').textContent = payload.success
       ? '順利在鬼抓人挑戰中存活/獲勝！'
       : '很可惜，這次沒能撐過鬼抓人挑戰。';
+    document.getElementById('restartBtn').style.display = 'none';
   }
 
   function initMpGame(payload){
