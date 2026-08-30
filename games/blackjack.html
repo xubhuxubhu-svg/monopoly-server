@@ -317,6 +317,7 @@
 
     MP.socket.on('blackjack_public_update', (pub) => {
       if (!match) return;
+      document.getElementById('overlay').style.display = 'none';
       state.currentIndex = pub.currentIndex;
       match.players.forEach(p => {
         const st = pub.statuses[p.token];
@@ -328,6 +329,7 @@
     });
 
     MP.socket.on('blackjack_your_turn', () => {
+      document.getElementById('overlay').style.display = 'none';
       const human = match.players.find(p=>p.isHuman);
       setStatus('輪到你了！目前 '+computeTotal(human.hand)+' 點，要牌還是停牌？');
       document.getElementById('actionRow').style.display = 'block';
@@ -342,6 +344,7 @@
     });
 
     MP.socket.on('blackjack_your_card', ({ hand }) => {
+      document.getElementById('overlay').style.display = 'none';
       const human = match.players.find(p=>p.isHuman);
       human.hand = hand; human.handCount = hand.length;
       renderTable();
@@ -382,6 +385,7 @@
       else { p.hand = []; p.handCount = 2; }
     });
     state = { deck: null, currentIndex: 0, revealed: false, winnerIds: [] };
+    document.getElementById('overlay').style.display = 'none';
     document.getElementById('roundIndicator').textContent = '第 '+payload.round+' / '+payload.totalRounds+' 局';
     renderPlayersRow();
     renderTable();
