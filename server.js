@@ -139,6 +139,52 @@ io.on('connection', (socket) => {
     if (room.pw) {
       socket.emit('password_game_start', { seatOrder: room.pw.seatOrder, rangeMax: room.pw.rangeMax, startSeatIdx: room.pw.currentTurnSeatIdx });
     }
+    if (room.rl) {
+      socket.emit('redlight_game_start', { seatOrder: room.rl.seatOrder, trackLen: room.rl.trackLen, progress: room.rl.progress, caughtTokens: Array.from(room.rl.caughtTokens||[]) });
+      socket.emit('redlight_phase', { phase: room.rl.phase, phaseEndsAt: room.rl.phaseEndsAt });
+    }
+    if (room.gt) {
+      socket.emit('ghost_tag_game_start', {
+        seatOrder: room.gt.seatOrder, obstacles: room.gt.obstacles,
+        itIndex: room.gt.itIndex, matchStartAt: room.gt.matchStartAt,
+        triggerToken: room.gt.triggerToken,
+      });
+    }
+    if (room.ps) {
+      socket.emit('plane_shooter_game_start', {
+        seatOrder: room.ps.seatOrder, matchStartAt: room.ps.matchStartAt, triggerToken: room.ps.triggerToken,
+      });
+    }
+    if (room.mj && room.mj.hands[playerToken]) {
+      socket.emit('mahjong_game_start', {
+        seatOrder: room.mj.seatOrder.map(x => ({ token:x.token, name:x.name })),
+        yourHand: room.mj.hands[playerToken],
+        wallCount: room.mj.wall.length,
+        currentIndex: room.mj.currentIndex,
+      });
+      socket.emit('mahjong_public_update', {
+        wallCount: room.mj.wall.length, currentIndex: room.mj.currentIndex,
+        handCounts: mjHandCounts(room),
+      });
+      if (room.mj.pendingToken === playerToken) {
+        if (room.mj.pendingType === 'selfwin') socket.emit('mahjong_offer_self_win', {});
+        else if (room.mj.pendingType === 'discard') socket.emit('mahjong_await_discard', {});
+        else if (room.mj.pendingType === 'hu') socket.emit('mahjong_offer_hu', { tile: room.mj.lastDiscard.tile, fromName: room.mj.lastDiscard.fromName });
+      }
+    }
+    if (room.bj && room.bj.hands[playerToken]) {
+      socket.emit('blackjack_round_start', {
+        seatOrder: room.bj.seatOrder.map(x => ({ token:x.token, name:x.name, wins: room.bj.wins[x.token] })),
+        yourHand: room.bj.hands[playerToken],
+        round: room.bj.currentRound, totalRounds: BJ_TOTAL_ROUNDS,
+      });
+      socket.emit('blackjack_public_update', {
+        currentIndex: room.bj.currentIndex, statuses: bjStatuses(room),
+      });
+      if (room.bj.pendingToken === playerToken) {
+        socket.emit('blackjack_your_turn', {});
+      }
+    }
   });
 
   // ---- 玩家準備狀態切換 ----
@@ -233,7 +279,445 @@ io.on('connection', (socket) => {
   // ============================================================
 
   // 目前已經接好連線的小遊戲：之後每完成一款新的，往這個陣列加一個名字即可
-  const AVAILABLE_MINIGAMES = ['ultimate_password'];
+  const AVAILABLE_MINIGAMES = ['ultimate_password', 'redlight', 'ghost_tag', 'plane_shooter', 'mahjong', 'blackjack'];
+
+  // 鬼抓人用：伺服器產生一份場地障礙物佈局，讓所有client畫面一致
+  function generateGhostTagObstacles(){
+    const boardHalf = 20;
+    const obstacles = [];
+    for (let i = 0; i < 9; i++) {
+      let x, z, tries = 0;
+      do {
+        x = -boardHalf + 4 + Math.random() * (boardHalf * 2 - 8);
+        z = -boardHalf + 4 + Math.random() * (boardHalf * 2 - 8);
+        tries++;
+      } while (Math.hypot(x, z) < 9 && tries < 20);
+      const size = 1.6 + Math.random() * 1.0;
+      obstacles.push({ x, z, size });
+    }
+    return obstacles;
+  }
+
+  // ============================================================
+  // 麻將用：手牌隱私必須由伺服器保管並權威判定，不能信任client(否則能改本地程式碼詐胡)。
+  // 這裡把單機版原本在client端的洗牌/算牌邏輯，原封不動搬到伺服器端。
+  // ============================================================
+  function mjBuildWall(){
+    const wall = [];
+    let id = 0;
+    ['dot','bam','chr'].forEach(suit => {
+      for (let num = 1; num <= 9; num++) {
+        for (let k = 0; k < 4; k++) wall.push({ id: id++, suit, num });
+      }
+    });
+    for (let i = wall.length-1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i+1));
+      [wall[i], wall[j]] = [wall[j], wall[i]];
+    }
+    return wall;
+  }
+  function mjToCounts(tiles){
+    const counts = { dot:new Array(9).fill(0), bam:new Array(9).fill(0), chr:new Array(9).fill(0) };
+    tiles.forEach(t => counts[t.suit][t.num-1]++);
+    return counts;
+  }
+  function mjCanFormMelds(counts){
+    for (const suit of ['dot','bam','chr']) {
+      for (let i = 0; i < 9; i++) {
+        if (counts[suit][i] > 0) {
+          const num = i+1;
+          if (counts[suit][i] >= 3) {
+            counts[suit][i] -= 3;
+            if (mjCanFormMelds(counts)) { counts[suit][i] += 3; return true; }
+            counts[suit][i] += 3;
+          }
+          if (num <= 7 && counts[suit][i+1] > 0 && counts[suit][i+2] > 0) {
+            counts[suit][i]--; counts[suit][i+1]--; counts[suit][i+2]--;
+            if (mjCanFormMelds(counts)) { counts[suit][i]++; counts[suit][i+1]++; counts[suit][i+2]++; return true; }
+            counts[suit][i]++; counts[suit][i+1]++; counts[suit][i+2]++;
+          }
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+  function mjIsWinningHand(tiles){
+    if (tiles.length !== 14) return false;
+    const base = mjToCounts(tiles);
+    for (const suit of ['dot','bam','chr']) {
+      for (let i = 0; i < 9; i++) {
+        if (base[suit][i] >= 2) {
+          base[suit][i] -= 2;
+          const ok = mjCanFormMelds(JSON.parse(JSON.stringify(base)));
+          base[suit][i] += 2;
+          if (ok) return true;
+        }
+      }
+    }
+    return false;
+  }
+  // 私人手牌只送給該token本人的所有連線(可能同時有主棋盤分頁+小遊戲iframe兩條連線)
+  function mjEmitToToken(roomCode, token, event, payload){
+    const roomSockets = io.sockets.adapter.rooms.get(roomCode);
+    if (!roomSockets) return;
+    roomSockets.forEach(sid => {
+      const s = io.sockets.sockets.get(sid);
+      if (s && s.data.playerToken === token) s.emit(event, payload);
+    });
+  }
+  function mjHandCounts(room){
+    const counts = {};
+    room.mj.seatOrder.forEach(s => { counts[s.token] = room.mj.hands[s.token].length; });
+    return counts;
+  }
+  function mjBroadcastPublic(roomCode, extra){
+    const room = rooms.get(roomCode);
+    if (!room || !room.mj) return;
+    io.to(roomCode).emit('mahjong_public_update', Object.assign({
+      wallCount: room.mj.wall.length,
+      currentIndex: room.mj.currentIndex,
+      handCounts: mjHandCounts(room),
+    }, extra || {}));
+  }
+  function mjStartGame(roomCode){
+    const room = rooms.get(roomCode);
+    if (!room || !room.mp) return;
+    const seatOrder = room.mp.seatOrder;
+    const wall = mjBuildWall();
+    const hands = {};
+    seatOrder.forEach(s => { hands[s.token] = wall.splice(0, 13); });
+    const triggerToken = room.activeMinigame ? room.activeMinigame.triggerToken : null;
+    room.mj = {
+      seatOrder, wall, hands, discardLog: [], lastDiscard: null, currentIndex: 0,
+      triggerToken, finished: false, pendingToken: null, pendingType: null, pendingTimer: null,
+    };
+    seatOrder.forEach(s => {
+      mjEmitToToken(roomCode, s.token, 'mahjong_game_start', {
+        seatOrder: seatOrder.map(x => ({ token:x.token, name:x.name })),
+        yourHand: hands[s.token],
+        wallCount: wall.length,
+        currentIndex: 0,
+      });
+    });
+    mjDrawPhase(roomCode);
+  }
+  function mjDrawPhase(roomCode){
+    const room = rooms.get(roomCode);
+    if (!room || !room.mj || room.mj.finished) return;
+    const mj = room.mj;
+    if (mj.wall.length === 0) { mjEndGame(roomCode, null, 'draw', null, null); return; }
+    const seat = mj.seatOrder[mj.currentIndex];
+    const drawn = mj.wall.pop();
+    mj.hands[seat.token].push(drawn);
+    mjBroadcastPublic(roomCode, { drewToken: seat.token, drewName: seat.name });
+    mjEmitToToken(roomCode, seat.token, 'mahjong_your_draw', { tile: drawn, hand: mj.hands[seat.token] });
+
+    if (mjIsWinningHand(mj.hands[seat.token])) {
+      mj.pendingToken = seat.token; mj.pendingType = 'selfwin';
+      mjEmitToToken(roomCode, seat.token, 'mahjong_offer_self_win', { tile: drawn });
+      clearTimeout(mj.pendingTimer);
+      mj.pendingTimer = setTimeout(() => mjResolveSelfWin(roomCode, seat.token, false), 12000);
+    } else {
+      mjAwaitDiscard(roomCode);
+    }
+  }
+  function mjResolveSelfWin(roomCode, token, accept){
+    const room = rooms.get(roomCode);
+    if (!room || !room.mj || room.mj.finished) return;
+    const mj = room.mj;
+    if (mj.pendingType !== 'selfwin' || mj.pendingToken !== token) return;
+    clearTimeout(mj.pendingTimer);
+    mj.pendingToken = null; mj.pendingType = null;
+    if (accept) {
+      const winTile = mj.hands[token][mj.hands[token].length-1];
+      mjEndGame(roomCode, token, 'self', null, winTile);
+    } else {
+      mjAwaitDiscard(roomCode);
+    }
+  }
+  function mjAwaitDiscard(roomCode){
+    const room = rooms.get(roomCode);
+    const mj = room.mj;
+    const seat = mj.seatOrder[mj.currentIndex];
+    mj.pendingToken = seat.token; mj.pendingType = 'discard';
+    mjEmitToToken(roomCode, seat.token, 'mahjong_await_discard', {});
+    clearTimeout(mj.pendingTimer);
+    mj.pendingTimer = setTimeout(() => {
+      const hand = mj.hands[seat.token];
+      if (!hand || !hand.length) return;
+      mjResolveDiscard(roomCode, seat.token, hand[hand.length-1].id);
+    }, 20000);
+  }
+  function mjResolveDiscard(roomCode, token, tileId){
+    const room = rooms.get(roomCode);
+    if (!room || !room.mj || room.mj.finished) return;
+    const mj = room.mj;
+    if (mj.pendingType !== 'discard' || mj.pendingToken !== token) return;
+    const hand = mj.hands[token];
+    const idx = hand.findIndex(t => t.id === tileId);
+    if (idx < 0) return;
+    clearTimeout(mj.pendingTimer);
+    mj.pendingToken = null; mj.pendingType = null;
+    const tile = hand.splice(idx, 1)[0];
+    const seat = mj.seatOrder.find(s => s.token === token);
+    mj.discardLog.push({ tile, from: seat.name });
+    mj.lastDiscard = { tile, fromToken: token, fromName: seat.name };
+    mjBroadcastPublic(roomCode, { discarded: { tile, fromToken: token, fromName: seat.name } });
+    mjOfferHuChain(roomCode, 1);
+  }
+  function mjOfferHuChain(roomCode, offset){
+    const room = rooms.get(roomCode);
+    const mj = room.mj;
+    const n = mj.seatOrder.length;
+    if (offset >= n) {
+      mj.currentIndex = (mj.currentIndex+1) % n;
+      mjDrawPhase(roomCode);
+      return;
+    }
+    const idx = (mj.currentIndex+offset) % n;
+    const seat = mj.seatOrder[idx];
+    const candidateHand = [...mj.hands[seat.token], mj.lastDiscard.tile];
+    if (mjIsWinningHand(candidateHand)) {
+      mj.pendingToken = seat.token; mj.pendingType = 'hu'; mj.pendingHuOffset = offset;
+      mjEmitToToken(roomCode, seat.token, 'mahjong_offer_hu', { tile: mj.lastDiscard.tile, fromName: mj.lastDiscard.fromName });
+      clearTimeout(mj.pendingTimer);
+      mj.pendingTimer = setTimeout(() => mjResolveHu(roomCode, seat.token, false), 12000);
+    } else {
+      mjOfferHuChain(roomCode, offset+1);
+    }
+  }
+  function mjResolveHu(roomCode, token, accept){
+    const room = rooms.get(roomCode);
+    if (!room || !room.mj || room.mj.finished) return;
+    const mj = room.mj;
+    if (mj.pendingType !== 'hu' || mj.pendingToken !== token) return;
+    clearTimeout(mj.pendingTimer);
+    const offset = mj.pendingHuOffset;
+    mj.pendingToken = null; mj.pendingType = null;
+    if (accept) {
+      mjEndGame(roomCode, token, 'discard', mj.lastDiscard.fromName, mj.lastDiscard.tile);
+    } else {
+      mjOfferHuChain(roomCode, offset+1);
+    }
+  }
+  function mjEndGame(roomCode, winnerToken, mode, loserName, winTile){
+    const room = rooms.get(roomCode);
+    if (!room || !room.mj) return;
+    const mj = room.mj;
+    mj.finished = true;
+    clearTimeout(mj.pendingTimer);
+    const winnerSeat = winnerToken ? mj.seatOrder.find(s => s.token === winnerToken) : null;
+    io.to(roomCode).emit('mahjong_game_over', {
+      winnerToken, winnerName: winnerSeat ? winnerSeat.name : null, mode, loserName, winTile,
+    });
+    if (room.activeMinigame && !room.activeMinigame.resultReported) {
+      room.activeMinigame.resultReported = true;
+      const success = !!winnerToken && winnerToken === room.activeMinigame.triggerToken;
+      io.to(roomCode).emit('minigame_result', {
+        winnerToken, winnerName: winnerSeat ? winnerSeat.name : '流局',
+        success, reason: room.activeMinigame.reason, tileIndex: room.activeMinigame.tileIndex,
+      });
+      console.log(`[麻將結束] ${roomCode} 贏家:${winnerSeat?winnerSeat.name:'流局'} 觸發者成功嗎:${success}`);
+      room.activeMinigame = null;
+    }
+    room.mj = null;
+  }
+
+  // ============================================================
+  // 21點PK用：發牌/計點沒有複雜組合判斷，風險比麻將低很多，
+  // 但牌堆仍要伺服器權威(不能信任client自己抽牌)，且每人手牌在該局結束前要保密。
+  // ============================================================
+  const BJ_SUITS = ['heart','diamond','club','spade'];
+  const BJ_RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  const BJ_TOTAL_ROUNDS = 5;
+  function bjBuildDeck(){
+    const deck = [];
+    let id = 0;
+    BJ_SUITS.forEach(suit => { BJ_RANKS.forEach(rank => { deck.push({ id:id++, suit, rank }); }); });
+    for (let i = deck.length-1; i > 0; i--) {
+      const j = Math.floor(Math.random()*(i+1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    return deck;
+  }
+  function bjCardValue(rank){
+    if (rank === 'A') return 11;
+    if (rank === 'J' || rank === 'Q' || rank === 'K') return 10;
+    return parseInt(rank, 10);
+  }
+  function bjComputeTotal(cards){
+    let total = 0, aces = 0;
+    cards.forEach(c => { total += bjCardValue(c.rank); if (c.rank === 'A') aces++; });
+    while (total > 21 && aces > 0) { total -= 10; aces--; }
+    return total;
+  }
+  function bjEmitToToken(roomCode, token, event, payload){
+    const roomSockets = io.sockets.adapter.rooms.get(roomCode);
+    if (!roomSockets) return;
+    roomSockets.forEach(sid => {
+      const s = io.sockets.sockets.get(sid);
+      if (s && s.data.playerToken === token) s.emit(event, payload);
+    });
+  }
+  function bjStatuses(room){
+    const statuses = {};
+    room.bj.seatOrder.forEach(s => {
+      statuses[s.token] = {
+        busted: !!room.bj.busted[s.token], stood: !!room.bj.stood[s.token],
+        handCount: (room.bj.hands[s.token] || []).length,
+      };
+    });
+    return statuses;
+  }
+  function bjBroadcastPublic(roomCode, extra){
+    const room = rooms.get(roomCode);
+    if (!room || !room.bj) return;
+    io.to(roomCode).emit('blackjack_public_update', Object.assign({
+      currentIndex: room.bj.currentIndex,
+      statuses: bjStatuses(room),
+    }, extra || {}));
+  }
+  function bjStartMatch(roomCode){
+    const room = rooms.get(roomCode);
+    if (!room || !room.mp) return;
+    const seatOrder = room.mp.seatOrder;
+    const triggerToken = room.activeMinigame ? room.activeMinigame.triggerToken : null;
+    const wins = {};
+    seatOrder.forEach(s => { wins[s.token] = 0; });
+    room.bj = {
+      seatOrder, currentRound: 1, wins, triggerToken, finished: false,
+      deck: [], hands: {}, busted: {}, stood: {}, currentIndex: 0,
+      pendingToken: null, pendingTimer: null,
+    };
+    bjStartRound(roomCode);
+  }
+  function bjStartRound(roomCode){
+    const room = rooms.get(roomCode);
+    if (!room || !room.bj) return;
+    const bj = room.bj;
+    const deck = bjBuildDeck();
+    bj.deck = deck; bj.hands = {}; bj.busted = {}; bj.stood = {}; bj.currentIndex = 0;
+    bj.seatOrder.forEach(s => {
+      bj.hands[s.token] = deck.splice(0, 2);
+      bj.busted[s.token] = false;
+      bj.stood[s.token] = false;
+    });
+    bj.seatOrder.forEach(s => {
+      bjEmitToToken(roomCode, s.token, 'blackjack_round_start', {
+        seatOrder: bj.seatOrder.map(x => ({ token:x.token, name:x.name, wins: bj.wins[x.token] })),
+        yourHand: bj.hands[s.token],
+        round: bj.currentRound, totalRounds: BJ_TOTAL_ROUNDS,
+      });
+    });
+    bjBroadcastPublic(roomCode, {});
+    bjAdvanceTurn(roomCode);
+  }
+  // 走到目前currentIndex這位玩家：21點自動停牌，否則詢問要牌/停牌
+  function bjAdvanceTurn(roomCode){
+    const room = rooms.get(roomCode);
+    if (!room || !room.bj || room.bj.finished) return;
+    const bj = room.bj;
+    if (bj.currentIndex >= bj.seatOrder.length) { bjRevealRound(roomCode); return; }
+    const seat = bj.seatOrder[bj.currentIndex];
+    if (bjComputeTotal(bj.hands[seat.token]) === 21) {
+      bj.stood[seat.token] = true;
+      bjBroadcastPublic(roomCode, {});
+      bj.currentIndex++;
+      bjAdvanceTurn(roomCode);
+      return;
+    }
+    bj.pendingToken = seat.token;
+    bjEmitToToken(roomCode, seat.token, 'blackjack_your_turn', {});
+    clearTimeout(bj.pendingTimer);
+    bj.pendingTimer = setTimeout(() => bjResolveAction(roomCode, seat.token, 'stand'), 15000);
+  }
+  function bjResolveAction(roomCode, token, action){
+    const room = rooms.get(roomCode);
+    if (!room || !room.bj || room.bj.finished) return;
+    const bj = room.bj;
+    const seat = bj.seatOrder[bj.currentIndex];
+    if (!seat || seat.token !== token || bj.pendingToken !== token) return;
+    clearTimeout(bj.pendingTimer);
+    bj.pendingToken = null;
+
+    if (action === 'hit') {
+      const card = bj.deck.pop();
+      bj.hands[token].push(card);
+      const total = bjComputeTotal(bj.hands[token]);
+      bjEmitToToken(roomCode, token, 'blackjack_your_card', { hand: bj.hands[token] });
+      if (total > 21) {
+        bj.busted[token] = true;
+        bjBroadcastPublic(roomCode, {});
+        bj.currentIndex++;
+        bjAdvanceTurn(roomCode);
+      } else if (total === 21) {
+        bj.stood[token] = true;
+        bjBroadcastPublic(roomCode, {});
+        bj.currentIndex++;
+        bjAdvanceTurn(roomCode);
+      } else {
+        // 還沒破也沒到21，繼續問同一位玩家
+        bj.pendingToken = token;
+        bjEmitToToken(roomCode, token, 'blackjack_your_turn', {});
+        clearTimeout(bj.pendingTimer);
+        bj.pendingTimer = setTimeout(() => bjResolveAction(roomCode, token, 'stand'), 15000);
+      }
+    } else {
+      bj.stood[token] = true;
+      bjBroadcastPublic(roomCode, {});
+      bj.currentIndex++;
+      bjAdvanceTurn(roomCode);
+    }
+  }
+  function bjRevealRound(roomCode){
+    const room = rooms.get(roomCode);
+    if (!room || !room.bj) return;
+    const bj = room.bj;
+    const totals = {};
+    bj.seatOrder.forEach(s => { totals[s.token] = bjComputeTotal(bj.hands[s.token]); });
+    const alive = bj.seatOrder.filter(s => !bj.busted[s.token]);
+    let maxTotal = -1;
+    alive.forEach(s => { if (totals[s.token] > maxTotal) maxTotal = totals[s.token]; });
+    const winners = alive.filter(s => totals[s.token] === maxTotal).map(s => s.token);
+    winners.forEach(t => { bj.wins[t] = (bj.wins[t]||0) + 1; });
+
+    const isFinalRound = bj.currentRound >= BJ_TOTAL_ROUNDS;
+    io.to(roomCode).emit('blackjack_round_over', {
+      hands: bj.hands, totals, winners, wins: bj.wins,
+      round: bj.currentRound, totalRounds: BJ_TOTAL_ROUNDS, isFinalRound,
+    });
+    console.log(`[21點] ${roomCode} 第${bj.currentRound}局贏家:`, winners.map(t=>bj.seatOrder.find(s=>s.token===t).name).join('、'));
+
+    if (isFinalRound) {
+      setTimeout(() => bjFinishMatch(roomCode), 3200);
+    } else {
+      bj.currentRound++;
+      setTimeout(() => bjStartRound(roomCode), 3200);
+    }
+  }
+  function bjFinishMatch(roomCode){
+    const room = rooms.get(roomCode);
+    if (!room || !room.bj || room.bj.finished) return;
+    const bj = room.bj;
+    bj.finished = true;
+    const maxWins = Math.max(...bj.seatOrder.map(s => bj.wins[s.token]));
+    const champTokens = bj.seatOrder.filter(s => bj.wins[s.token] === maxWins).map(s => s.token);
+    const champNames = bj.seatOrder.filter(s => champTokens.includes(s.token)).map(s => s.name);
+    io.to(roomCode).emit('blackjack_match_over', { championTokens: champTokens, championNames: champNames, wins: bj.wins });
+
+    if (room.activeMinigame && !room.activeMinigame.resultReported) {
+      room.activeMinigame.resultReported = true;
+      const success = champTokens.includes(room.activeMinigame.triggerToken);
+      io.to(roomCode).emit('minigame_result', {
+        winnerToken: champTokens[0], winnerName: champNames.join('、'),
+        success, reason: room.activeMinigame.reason, tileIndex: room.activeMinigame.tileIndex,
+      });
+      console.log(`[21點結束] ${roomCode} 總冠軍:${champNames.join('、')} 觸發者成功嗎:${success}`);
+      room.activeMinigame = null;
+    }
+    room.bj = null;
+  }
 
   function startMinigameInternal(roomCode, gameId){
     const room = rooms.get(roomCode);
@@ -246,7 +730,85 @@ io.on('connection', (socket) => {
       room.pw = { seatOrder, currentTurnSeatIdx: 0, low: 1, high: rangeMax, rangeMax, target };
       io.to(roomCode).emit('password_game_start', { seatOrder, rangeMax, startSeatIdx: 0 });
     }
-    // 之後其他小遊戲(123木頭人/麻將/飛機射擊/鬼抓人)接好後，在這裡加對應的 else if 分支
+    else if (gameId === 'redlight') {
+      const trackLen = 100;
+      const progress = {};
+      seatOrder.forEach(s => { progress[s.token] = 0; });
+      room.rl = {
+        seatOrder, trackLen, progress,
+        caughtTokens: new Set(),
+        finishedToken: null,
+        phase: 'idle',
+        phaseEndsAt: 0,
+        phaseTimer: null,
+      };
+      io.to(roomCode).emit('redlight_game_start', { seatOrder, trackLen, progress });
+      scheduleRedlightPhase(roomCode, 'green');
+    }
+    else if (gameId === 'ghost_tag') {
+      const itIndex = Math.floor(Math.random() * seatOrder.length);
+      const obstacles = generateGhostTagObstacles();
+      const matchStartAt = Date.now() + 3600; // 給棋盤翻面動畫+倒數留緩衝，所有client用同一個絕對時間起跑
+      const triggerToken = room.activeMinigame ? room.activeMinigame.triggerToken : null;
+      room.gt = { seatOrder, obstacles, itIndex, matchStartAt, triggerToken, finished:false };
+      io.to(roomCode).emit('ghost_tag_game_start', { seatOrder, obstacles, itIndex, matchStartAt, triggerToken });
+    }
+    else if (gameId === 'plane_shooter') {
+      const matchStartAt = Date.now() + 3600;
+      const MATCH_TIME_MS = 60000;
+      const scores = {};
+      seatOrder.forEach(s => { scores[s.token] = 0; });
+      const triggerToken = room.activeMinigame ? room.activeMinigame.triggerToken : null;
+      room.ps = { seatOrder, matchStartAt, scores, triggerToken, finished:false, finalizeTimer:null };
+      io.to(roomCode).emit('plane_shooter_game_start', { seatOrder, matchStartAt, triggerToken });
+      // 伺服器權威終局：時間到(+一點緩衝)後，不管有沒有收到每個人主動回報，都用目前已知最高分決勝負
+      room.ps.finalizeTimer = setTimeout(() => finalizePlaneShooter(roomCode), MATCH_TIME_MS + 3600 + 1500);
+    }
+    else if (gameId === 'mahjong') {
+      mjStartGame(roomCode);
+    }
+    else if (gameId === 'blackjack') {
+      bjStartMatch(roomCode);
+    }
+    // 全部6款都接好了！之後如果要再加新的小遊戲，比照上面的模式加 else if 分支即可
+  }
+
+  function finalizePlaneShooter(roomCode){
+    const room = rooms.get(roomCode);
+    if (!room || !room.ps || room.ps.finished) return;
+    room.ps.finished = true;
+    let winnerToken = null, winnerScore = -1;
+    for (const [token, score] of Object.entries(room.ps.scores)) {
+      if (score > winnerScore) { winnerScore = score; winnerToken = token; }
+    }
+    const winnerSeat = room.ps.seatOrder.find(s => s.token === winnerToken);
+    if (room.activeMinigame && !room.activeMinigame.resultReported) {
+      room.activeMinigame.resultReported = true;
+      const success = winnerToken === room.activeMinigame.triggerToken;
+      io.to(roomCode).emit('minigame_result', {
+        winnerToken, winnerName: winnerSeat ? winnerSeat.name : '未知',
+        success, reason: room.activeMinigame.reason, tileIndex: room.activeMinigame.tileIndex,
+      });
+      console.log(`[飛機射擊結束] ${roomCode} 最高分:${winnerSeat?winnerSeat.name:'?'}(${winnerScore}) 觸發者成功嗎:${success}`);
+      room.activeMinigame = null;
+    }
+    room.ps = null;
+  }
+
+  // ---- 123木頭人：伺服器權威控制綠燈/紅燈時間並廣播絕對時間戳，各端依此自行判定紅燈時是否放開 ----
+  function scheduleRedlightPhase(roomCode, phase){
+    const room = rooms.get(roomCode);
+    if (!room || !room.rl) return; // 遊戲已結束/房間已消失，停止排程鏈
+    const dur = phase === 'green'
+      ? (1600 + Math.random() * 1800)
+      : (1300 + Math.random() * 800);
+    room.rl.phase = phase;
+    room.rl.phaseEndsAt = Date.now() + dur;
+    io.to(roomCode).emit('redlight_phase', { phase, phaseEndsAt: room.rl.phaseEndsAt });
+    clearTimeout(room.rl.phaseTimer);
+    room.rl.phaseTimer = setTimeout(() => {
+      scheduleRedlightPhase(roomCode, phase === 'green' ? 'red' : 'green');
+    }, dur);
   }
 
   socket.on('trigger_minigame', ({ reason, tileIndex }, callback) => {
@@ -286,6 +848,7 @@ io.on('connection', (socket) => {
     });
     console.log(`[小遊戲結束] ${roomCode} 贏家:${winnerName} 觸發者成功嗎:${success}`);
     room.pw = null;
+    if (room.rl) { clearTimeout(room.rl.phaseTimer); room.rl = null; }
     room.activeMinigame = null;
   });
 
@@ -344,10 +907,161 @@ io.on('connection', (socket) => {
   });
 
   // ============================================================
-  // 123木頭人／麻將／飛機射擊／鬼抓人：尚未套用「觸發式強制參加」機制，
-  // 之後每完成一款，會在這裡加上跟終極密碼同樣模式的連線同步程式碼，
-  // 並把遊戲代號加進上面的 AVAILABLE_MINIGAMES 陣列。
+  // 123木頭人小遊戲 連線同步：伺服器只負責綠燈/紅燈的絕對時間戳與「誰先衝線」的判定，
+  // 移動進度與紅燈誤觸由各自client自行判斷後回報(信任client)，符合這個專案既有的輕量同步模式。
   // ============================================================
+
+  // 玩家在綠燈時持續回報自己的進度，伺服器轉發給房間其他人套用在畫面上
+  socket.on('redlight_move', ({ progress }) => {
+    const roomCode = socket.data.roomCode;
+    const room = rooms.get(roomCode);
+    if (!room || !room.rl) return;
+    const token = socket.data.playerToken;
+    if (!(token in room.rl.progress)) return;
+    if (typeof progress !== 'number' || progress < 0 || progress > room.rl.trackLen) return;
+    room.rl.progress[token] = progress;
+    socket.to(roomCode).emit('redlight_move', { token, progress });
+  });
+
+  // 玩家在紅燈還按著移動被自己端偵測到「被抓到」，回報後廣播讓大家看到退回起點的動畫
+  socket.on('redlight_caught', () => {
+    const roomCode = socket.data.roomCode;
+    const room = rooms.get(roomCode);
+    if (!room || !room.rl) return;
+    const token = socket.data.playerToken;
+    if (!(token in room.rl.progress)) return;
+    room.rl.progress[token] = 0;
+    room.rl.caughtTokens.add(token);
+    io.to(roomCode).emit('redlight_player_caught', { token });
+  });
+
+  // 第一個回報「衝線」的玩家就是贏家(先到先贏，之後的回報一律忽略)
+  socket.on('redlight_finished', (data, callback) => {
+    const roomCode = socket.data.roomCode;
+    const room = rooms.get(roomCode);
+    if (!room || !room.rl || room.rl.finishedToken) return callback && callback({ ok:false });
+    const token = socket.data.playerToken;
+    const seat = room.rl.seatOrder.find(s => s.token === token);
+    if (!seat) return callback && callback({ ok:false });
+    room.rl.finishedToken = token;
+    clearTimeout(room.rl.phaseTimer);
+    callback && callback({ ok:true });
+
+    if (room.activeMinigame && !room.activeMinigame.resultReported) {
+      room.activeMinigame.resultReported = true;
+      const success = token === room.activeMinigame.triggerToken;
+      io.to(roomCode).emit('minigame_result', {
+        winnerToken: token, winnerName: seat.name, success,
+        reason: room.activeMinigame.reason, tileIndex: room.activeMinigame.tileIndex,
+      });
+      console.log(`[123木頭人結束] ${roomCode} 贏家:${seat.name} 觸發者成功嗎:${success}`);
+      room.rl = null;
+      room.activeMinigame = null;
+    }
+  });
+
+  // ============================================================
+  // 鬼抓人小遊戲 連線同步：伺服器只決定「誰是鬼、障礙物長怎樣、絕對起跑時間」，
+  // 移動位置由各自client自己算好本地玩家的位置後廣播出去(信任client)，
+  // 遠端玩家的畫面純粹套用收到的位置；抓人判定也是「鬼」的client自己判定後廣播；
+  // 誰贏誰輸則由「觸發的那個人」自己的client判斷自己最終是否成功，直接回報結果
+  // (因為這款遊戲可能同時有多個逃跑者「贏」，沒有唯一贏家可比對，跟終極密碼/123木頭人不同模式)。
+  // ============================================================
+
+  socket.on('ghosttag_move', ({ x, z }) => {
+    const roomCode = socket.data.roomCode;
+    const room = rooms.get(roomCode);
+    if (!room || !room.gt) return;
+    const token = socket.data.playerToken;
+    if (typeof x !== 'number' || typeof z !== 'number') return;
+    socket.to(roomCode).emit('ghosttag_move', { token, x, z });
+  });
+
+  socket.on('ghosttag_eliminate', ({ targetToken }) => {
+    const roomCode = socket.data.roomCode;
+    const room = rooms.get(roomCode);
+    if (!room || !room.gt || room.gt.finished) return;
+    // 只信任「鬼」自己的client送出的淘汰判定，避免其他人亂廣播淘汰別人
+    const itSeat = room.gt.seatOrder[room.gt.itIndex];
+    if (!itSeat || itSeat.token !== socket.data.playerToken) return;
+    io.to(roomCode).emit('ghosttag_eliminate', { targetToken });
+  });
+
+  // 「觸發式強制參加」共用的自我回報結果管道：只信任目前這場小遊戲的觸發者自己回報
+  socket.on('report_trigger_outcome', ({ success }) => {
+    const roomCode = socket.data.roomCode;
+    const room = rooms.get(roomCode);
+    if (!room || !room.activeMinigame || room.activeMinigame.resultReported) return;
+    if (socket.data.playerToken !== room.activeMinigame.triggerToken) return;
+    room.activeMinigame.resultReported = true;
+    const triggerSeat = (room.gt && room.gt.seatOrder.find(s => s.token === socket.data.playerToken)) || {};
+    io.to(roomCode).emit('minigame_result', {
+      winnerToken: socket.data.playerToken,
+      winnerName: room.activeMinigame.triggerName || triggerSeat.name,
+      success: !!success,
+      reason: room.activeMinigame.reason, tileIndex: room.activeMinigame.tileIndex,
+    });
+    console.log(`[鬼抓人結束] ${roomCode} 觸發者:${room.activeMinigame.triggerName} 成功嗎:${!!success}`);
+    if (room.gt) { room.gt.finished = true; room.gt = null; }
+    room.activeMinigame = null;
+  });
+
+  // ============================================================
+  // 飛機射擊小遊戲 連線同步：每個真人玩家各自本地模擬「自己」那架飛機的完整玩法，
+  // 定期回報自己的位置/血量/分數，伺服器只單純轉發給其他人當作畫面上的裝飾疊圖；
+  // 誰贏誰輸則是伺服器權威計時器在比賽結束時，比較所有人回報過的最高分數來決定。
+  // ============================================================
+
+  socket.on('planeshooter_move', ({ x, y, hp, score, alive }) => {
+    const roomCode = socket.data.roomCode;
+    const room = rooms.get(roomCode);
+    if (!room || !room.ps) return;
+    const token = socket.data.playerToken;
+    if (!(token in room.ps.scores)) return;
+    if (typeof score === 'number') room.ps.scores[token] = score;
+    socket.to(roomCode).emit('planeshooter_move', { token, x, y, hp, score, alive });
+  });
+
+  // 玩家自己判定比賽已結束(達到60秒)時，提前送出最終分數；真正的勝負判定仍統一交給伺服器的權威計時器處理，
+  // 這裡先更新分數即可，避免要等到計時器觸發的那零點幾秒空窗顯示分數不同步
+  socket.on('planeshooter_finished', ({ score }) => {
+    const roomCode = socket.data.roomCode;
+    const room = rooms.get(roomCode);
+    if (!room || !room.ps) return;
+    const token = socket.data.playerToken;
+    if (!(token in room.ps.scores)) return;
+    if (typeof score === 'number') room.ps.scores[token] = score;
+  });
+
+  // ============================================================
+  // 麻將小遊戲 連線事件：這三個動作都必須經伺服器驗證(是不是輪到你/牌是不是真的在你手上/
+  // 胡牌是不是真的成立)，不能信任client直接送結果，否則能改本地程式碼詐胡。
+  // ============================================================
+  socket.on('mahjong_discard', ({ tileId }) => {
+    const roomCode = socket.data.roomCode;
+    if (!roomCode) return;
+    mjResolveDiscard(roomCode, socket.data.playerToken, tileId);
+  });
+  socket.on('mahjong_confirm_self_win', ({ accept }) => {
+    const roomCode = socket.data.roomCode;
+    if (!roomCode) return;
+    mjResolveSelfWin(roomCode, socket.data.playerToken, !!accept);
+  });
+  socket.on('mahjong_hu_decision', ({ accept }) => {
+    const roomCode = socket.data.roomCode;
+    if (!roomCode) return;
+    mjResolveHu(roomCode, socket.data.playerToken, !!accept);
+  });
+
+  // ============================================================
+  // 21點PK 連線事件：要牌/停牌都必須是伺服器目前正在等待的那位玩家才會生效，
+  // 牌堆/發牌一律伺服器權威，client端只負責顯示。
+  // ============================================================
+  socket.on('blackjack_action', ({ action }) => {
+    const roomCode = socket.data.roomCode;
+    if (!roomCode) return;
+    bjResolveAction(roomCode, socket.data.playerToken, action === 'hit' ? 'hit' : 'stand');
+  });
 
   // ---- 簡易測試訊息廣播（驗證即時同步用，之後會換成真正的遊戲事件） ----
   socket.on('test_ping', (msg) => {
@@ -385,6 +1099,30 @@ io.on('connection', (socket) => {
     }
     if (room.pw) {
       io.to(roomCode).emit('pw_player_left', {});
+    }
+    if (room.rl) {
+      clearTimeout(room.rl.phaseTimer);
+      room.rl = null;
+      io.to(roomCode).emit('rl_player_left', {});
+    }
+    if (room.gt) {
+      room.gt = null;
+      io.to(roomCode).emit('gt_player_left', {});
+    }
+    if (room.ps) {
+      clearTimeout(room.ps.finalizeTimer);
+      room.ps = null;
+      io.to(roomCode).emit('ps_player_left', {});
+    }
+    if (room.mj) {
+      clearTimeout(room.mj.pendingTimer);
+      room.mj = null;
+      io.to(roomCode).emit('mj_player_left', {});
+    }
+    if (room.bj) {
+      clearTimeout(room.bj.pendingTimer);
+      room.bj = null;
+      io.to(roomCode).emit('bj_player_left', {});
     }
 
     broadcastRoomState(roomCode);
