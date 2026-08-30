@@ -62,7 +62,7 @@
   .hud-badge .sc{ color:var(--gold); }
 
   #joystickBase{
-    position:absolute; bottom:34px; left:34px; width:110px; height:110px; border-radius:50%;
+    position:absolute; bottom:34px; left:50%; transform:translateX(-50%); width:110px; height:110px; border-radius:50%;
     background:rgba(255,255,255,0.15); border:3px solid rgba(255,255,255,0.35); z-index:10;
   }
   #joystickKnob{
@@ -257,6 +257,7 @@
       : (payload.winnerName||'其他玩家')+' 拿下最高分，觸發者這次沒能成功';
     document.getElementById('endSub').textContent = '時間到！這場戰鬥依「最高分」判定挑戰是否成功。';
     document.getElementById('endSummary').innerHTML = '';
+    document.getElementById('restartBtn').style.display = 'none';
     spawnConfetti(payload.success ? 70 : 20);
   }
 
@@ -684,7 +685,7 @@
         endMatch();
       }
       const allDead = MP.enabled ? players.filter(p=>p.isHuman).every(p=>!p.alive) : players.every(p=>!p.alive);
-      if(allDead && !matchOver && !MP.enabled){
+      if(allDead && !matchOver){
         matchOver = true;
         endMatch();
       }
@@ -792,6 +793,7 @@
         const localP = players.find(p => p.isHuman);
         MP.socket.emit('planeshooter_finished', { score: localP ? localP.score : 0 });
       }
+      document.getElementById('phaseText').textContent = '你的戰鬥結束，等待其他玩家與最終結果...';
       return; // 最終結果統一等 minigame_result 廣播後由 showMpFinalResult 顯示
     }
     document.getElementById('overlay').style.display='flex';
