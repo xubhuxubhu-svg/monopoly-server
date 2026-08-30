@@ -560,6 +560,7 @@
     document.getElementById('endSub').textContent = iWon
       ? '恭喜第一個衝過終點線，木頭人大賽冠軍就是你！'
       : winner.name+' 搶先衝過終點線，下次再挑戰看看！';
+    document.getElementById('restartBtn').style.display = MP.enabled ? 'none' : '';
   }
 
   // action button — hold to move
