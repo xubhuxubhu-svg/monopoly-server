@@ -759,7 +759,7 @@ io.on('connection', (socket) => {
       const scores = {};
       seatOrder.forEach(s => { scores[s.token] = 0; });
       const triggerToken = room.activeMinigame ? room.activeMinigame.triggerToken : null;
-      room.ps = { seatOrder, matchStartAt, scores, triggerToken, finished:false, finalizeTimer:null };
+      room.ps = { seatOrder, matchStartAt, scores, triggerToken, finished:false, finalizeTimer:null, finishedTokens:new Set() };
       io.to(roomCode).emit('plane_shooter_game_start', { seatOrder, matchStartAt, triggerToken });
       // 伺服器權威終局：時間到(+一點緩衝)後，不管有沒有收到每個人主動回報，都用目前已知最高分決勝負
       room.ps.finalizeTimer = setTimeout(() => finalizePlaneShooter(roomCode), MATCH_TIME_MS + 3600 + 1500);
@@ -818,7 +818,17 @@ io.on('connection', (socket) => {
     const triggerSeat = room.mp.seatOrder.find(s => s.token === socket.data.playerToken);
     if (!triggerSeat) return callback && callback({ ok:false, error:'找不到你的座位' });
 
-    const gameId = AVAILABLE_MINIGAMES[Math.floor(Math.random() * AVAILABLE_MINIGAMES.length)];
+    // 用「不放回抽籤」而非每次都重新均勻隨機：把6款遊戲洗牌放進一個隨房間持有的牌堆，
+    // 每次觸發從牌堆抽一張，抽完再重新洗牌放回去。這樣可以保證每6次觸發內六款都會各出現一次，
+    // 不會像單純均勻隨機那樣運氣不好時連續很多次都抽不到某一款。
+    if (!room.minigameBag || room.minigameBag.length === 0) {
+      room.minigameBag = AVAILABLE_MINIGAMES.slice();
+      for (let i = room.minigameBag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [room.minigameBag[i], room.minigameBag[j]] = [room.minigameBag[j], room.minigameBag[i]];
+      }
+    }
+    const gameId = room.minigameBag.pop();
     room.activeMinigame = {
       gameId, reason, tileIndex,
       triggerToken: triggerSeat.token, triggerName: triggerSeat.name,
@@ -1022,8 +1032,9 @@ io.on('connection', (socket) => {
     socket.to(roomCode).emit('planeshooter_move', { token, x, y, hp, score, alive });
   });
 
-  // 玩家自己判定比賽已結束(達到60秒)時，提前送出最終分數；真正的勝負判定仍統一交給伺服器的權威計時器處理，
-  // 這裡先更新分數即可，避免要等到計時器觸發的那零點幾秒空窗顯示分數不同步
+  // 玩家自己判定比賽已結束(死亡或達到60秒)時，提前送出最終分數；
+  // 如果房間裡所有真人玩家都已經回報結束，就不用死等伺服器的權威計時器，直接提前結算，
+  // 否則仍統一交給伺服器的權威計時器處理，這裡先更新分數即可，避免空窗顯示分數不同步
   socket.on('planeshooter_finished', ({ score }) => {
     const roomCode = socket.data.roomCode;
     const room = rooms.get(roomCode);
@@ -1031,6 +1042,11 @@ io.on('connection', (socket) => {
     const token = socket.data.playerToken;
     if (!(token in room.ps.scores)) return;
     if (typeof score === 'number') room.ps.scores[token] = score;
+    room.ps.finishedTokens.add(token);
+    if (room.ps.finishedTokens.size >= room.ps.seatOrder.length) {
+      clearTimeout(room.ps.finalizeTimer);
+      finalizePlaneShooter(roomCode);
+    }
   });
 
   // ============================================================
@@ -1077,6 +1093,12 @@ io.on('connection', (socket) => {
     if (!roomCode) return;
     const room = rooms.get(roomCode);
     if (!room) return;
+
+    // 這條連線如果不在 room.players 裡，代表它只是小遊戲 iframe 用
+    // join_as_participant 接上的分身連線，不是玩家的主連線。
+    // 每玩完一場小遊戲、iframe 關閉時都會觸發這裡，若照下面整套「玩家離線」
+    // 處理走一遍，會誤判成真人斷線，所以這種連線直接忽略即可。
+    if (!room.players.has(socket.id)) return;
 
     room.players.delete(socket.id);
 
