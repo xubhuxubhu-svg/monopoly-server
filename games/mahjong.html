@@ -539,11 +539,9 @@
   }
 
   function tileHTML(t){
-    const info = SUIT_INFO[t.suit];
     const label = t.suit==='chr' ? CN_NUM[t.num]+'萬' : t.num;
     const sub = t.suit==='dot' ? '筒' : (t.suit==='bam' ? '條' : '');
-    return `<div class="mascot">${info.mascot}</div>
-            <div class="num">${label}</div>
+    return `<div class="num">${label}</div>
             ${sub? `<div class="sub">${sub}</div>` : ''}`;
   }
 
@@ -652,6 +650,7 @@
 
   function endGame(winner, mode, loserName, winTile){
     document.getElementById('overlay').style.display='flex';
+    document.getElementById('restartBtn').style.display = MP.enabled ? 'none' : '';
     document.getElementById('endEmoji').textContent = winner ? '🎉' : '🀫';
     if(winner){
       document.getElementById('endTitle').textContent = (winner.isHuman? '你贏了！' : winner.name+' 獲勝！');
