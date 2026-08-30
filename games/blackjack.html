@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>萌樂21點 PK賽</title>
+<style>
+  :root{
+    --cream:#fff8ec;
+    --pink:#ff8fab;
+    --pink-dark:#ef5f86;
+    --gold:#ffc857;
+    --gold-dark:#e2a72e;
+    --ink:#3a2b22;
+    --felt-1:#7a1f2b;
+    --felt-2:#4d1119;
+    --red:#e6453f;
+    --black:#2b2b2b;
+    --shadow: 0 6px 0 rgba(0,0,0,0.15);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; font-family:"Segoe UI Rounded","PingFang TC","Microsoft JhengHei",sans-serif;
+    background: radial-gradient(circle at 50% 0%, #9a2d3a, #5c1620 60%, #3a0e14 100%);
+    color:var(--ink); overflow-x:hidden;
+  }
+  h1,h2,h3{margin:0;}
+  button{font-family:inherit; cursor:pointer;}
+
+  /* ---------- SETUP ---------- */
+  #setup{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    min-height:100vh; padding:24px; text-align:center;
+  }
+  .logo{
+    font-size:38px; font-weight:900; color:var(--gold);
+    text-shadow: 3px 3px 0 #6a1420, 0 0 16px rgba(255,200,87,0.5);
+    letter-spacing:2px; margin-bottom:4px;
+  }
+  .subtitle{ color:#ffd9de; font-weight:600; margin-bottom:26px;}
+  .card-panel{
+    background:var(--cream); border-radius:28px; padding:28px 30px;
+    box-shadow: var(--shadow), 0 10px 30px rgba(0,0,0,0.3);
+    border:4px solid #fff; max-width:420px; width:100%;
+  }
+  .section-label{font-weight:800; margin:14px 0 10px; color:#7a5b2f; font-size:15px;}
+  .choice-row{display:flex; gap:10px; justify-content:center; flex-wrap:wrap;}
+  .choice-btn{
+    padding:12px 18px; border-radius:16px; border:3px solid #f0dcb8; background:#fff;
+    font-weight:800; font-size:16px; color:#8a6a3a; transition:transform .12s;
+  }
+  .choice-btn.selected{ background:var(--gold); border-color:var(--gold-dark); color:#5c3e12; transform:scale(1.08);}
+  .avatar-btn{
+    font-size:30px; padding:8px 10px; border-radius:50%; border:3px solid #f0dcb8; background:#fff;
+  }
+  .avatar-btn.selected{ background:#ffe08a; border-color:var(--gold-dark); transform:scale(1.15);}
+  #startBtn{
+    margin-top:22px; padding:14px 40px; border:none; border-radius:20px;
+    background:linear-gradient(180deg,var(--pink),var(--pink-dark)); color:#fff; font-weight:900;
+    font-size:19px; box-shadow:0 5px 0 #c8446a; letter-spacing:1px;
+  }
+  #startBtn:active{ transform:translateY(4px); box-shadow:none;}
+  .rule-note{font-size:12.5px; color:#8a8a8a; margin-top:16px; line-height:1.6;}
+
+  /* ---------- GAME ---------- */
+  #game{ display:none; min-height:100vh; padding:14px; }
+
+  .round-indicator{
+    text-align:center; color:var(--gold); font-weight:900; font-size:15px; margin-bottom:8px;
+    letter-spacing:1px;
+  }
+
+  .players-row{
+    display:flex; justify-content:center; gap:14px; margin-bottom:16px; flex-wrap:wrap;
+  }
+  .p-badge{
+    display:flex; flex-direction:column; align-items:center; gap:2px;
+    background:rgba(255,255,255,0.12); border-radius:16px; padding:8px 12px;
+    border:3px solid transparent; transition:all .2s; position:relative;
+  }
+  .p-badge.active{ border-color:var(--gold); background:rgba(255,200,87,0.2); transform:scale(1.08); }
+  .p-badge.busted{ opacity:0.45; }
+  .p-badge.champion{ animation: championBounce .6s ease infinite alternate; border-color:var(--gold); }
+  @keyframes championBounce{ 0%{ transform:translateY(0) scale(1);} 100%{ transform:translateY(-6px) scale(1.06);} }
+  .p-badge .av{
+    width:40px; height:40px; border-radius:50%; background:#fff; display:flex; align-items:center;
+    justify-content:center; font-size:22px; box-shadow:0 3px 6px rgba(0,0,0,0.3);
+  }
+  .p-badge .nm{ font-size:12px; font-weight:800; color:#fff; }
+  .p-badge .st{ font-size:10px; font-weight:800; color:var(--gold); min-height:12px;}
+  .p-badge .wins{ font-size:11px; font-weight:800; color:#ffe9b0; }
+
+  .status-line{ text-align:center; color:#fff; font-weight:800; font-size:16px; min-height:24px; margin-bottom:12px;}
+
+  .table-area{ max-width:640px; margin:0 auto; }
+  .hand-row{
+    background:rgba(255,255,255,0.08); border-radius:18px; padding:10px 14px; margin-bottom:10px;
+  }
+  .hand-row.active-row{ background:rgba(255,200,87,0.16); box-shadow:0 0 0 3px var(--gold) inset; }
+  .hand-row-head{
+    display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; color:#fff;
+  }
+  .hand-row-head .who{ font-weight:800; font-size:14px; display:flex; align-items:center; gap:6px;}
+  .hand-row-head .total-badge{
+    font-weight:900; font-size:14px; background:rgba(255,255,255,0.18); border-radius:10px; padding:2px 10px;
+  }
+  .hand-row-head .total-badge.bust{ background:#e6453f; }
+  .hand-row-head .total-badge.win{ background:var(--gold); color:#5c3e12; }
+  .cards-strip{ display:flex; gap:6px; flex-wrap:wrap; }
+
+  .card{
+    width:52px; height:74px; border-radius:9px; background:#fff; position:relative;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.2), 0 5px 8px rgba(0,0,0,0.2);
+    border:3px solid #fff; font-weight:900;
+  }
+  .card .rank{ font-size:22px; line-height:1;}
+  .card .suit{ font-size:16px; margin-top:2px;}
+  .card .mascot{ position:absolute; top:2px; right:3px; font-size:10px;}
+  .card.red{ color:var(--red); }
+  .card.black{ color:var(--black); }
+  .card-back{
+    width:52px; height:74px; border-radius:9px; border:3px solid #fff;
+    background:repeating-linear-gradient(45deg, var(--pink) 0 6px, var(--pink-dark) 6px 12px);
+    box-shadow: 0 3px 0 rgba(0,0,0,0.2), 0 5px 8px rgba(0,0,0,0.2);
+    display:flex; align-items:center; justify-content:center; font-size:18px;
+  }
+
+  .action-row{ text-align:center; margin-top:14px; }
+  .action-btn{
+    padding:14px 30px; border:none; border-radius:18px; font-weight:900; font-size:18px;
+    margin:0 6px; box-shadow:0 5px 0 rgba(0,0,0,0.25);
+  }
+  #hitBtn{ background:linear-gradient(180deg,#6ec87a,#3fa451); color:#fff; }
+  #standBtn{ background:linear-gradient(180deg,#ffb56b,#e6853f); color:#fff; }
+  .action-btn:active{ transform:translateY(4px); box-shadow:none;}
+
+  /* explosion fx for bust */
+  .boom-particle{
+    position:fixed; z-index:999; font-size:24px; pointer-events:none; left:0; top:0;
+    animation: boomFly .6s ease-out forwards;
+  }
+  @keyframes boomFly{
+    0%{ transform:translate(-50%,-50%) scale(0.3) rotate(0deg); opacity:1;}
+    55%{ opacity:1;}
+    100%{ transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.5) rotate(var(--rot)); opacity:0;}
+  }
+  .shake-strong{ animation: shakeStrong .4s; }
+  @keyframes shakeStrong{
+    0%,100%{ transform:translateX(0); }
+    20%{ transform:translateX(-8px); } 40%{ transform:translateX(8px); }
+    60%{ transform:translateX(-6px); } 80%{ transform:translateX(6px); }
+  }
+
+  /* confetti fx for winners */
+  .confetti-piece{
+    position:fixed; top:-40px; z-index:997; pointer-events:none;
+    animation-name: confettiFall; animation-timing-function:ease-in; animation-fill-mode:forwards;
+  }
+  @keyframes confettiFall{
+    0%{ transform:translateY(0) rotate(0deg); opacity:1;}
+    100%{ transform:translateY(110vh) rotate(420deg); opacity:0.85;}
+  }
+  .trophy-burst{
+    position:fixed; z-index:998; pointer-events:none; font-size:40px;
+    animation: trophyPop .9s ease-out forwards;
+  }
+  @keyframes trophyPop{
+    0%{ transform:translate(-50%,-50%) scale(0.2); opacity:0;}
+    30%{ transform:translate(-50%,-50%) scale(1.3); opacity:1;}
+    100%{ transform:translate(-50%,-50%) scale(1) translateY(-40px); opacity:0;}
+  }
+
+  /* ---------- END OVERLAY ---------- */
+  #overlay{
+    display:none; position:fixed; inset:0; background:rgba(20,5,10,0.72); z-index:50;
+    align-items:center; justify-content:center;
+  }
+  .end-card{
+    background:var(--cream); border-radius:28px; padding:30px 34px; text-align:center;
+    border:5px solid #fff; box-shadow:0 12px 0 rgba(0,0,0,0.2); max-width:380px;
+  }
+  .end-emoji{ font-size:56px; }
+  .end-title{ font-size:26px; font-weight:900; color:var(--pink-dark); margin:8px 0;}
+  .end-round-tag{ font-size:13px; font-weight:800; color:#a5700a; margin-bottom:4px;}
+  .end-summary{ text-align:left; margin:14px 0; font-size:14px; line-height:1.9;}
+  .end-summary .row{ display:flex; justify-content:space-between; padding:2px 10px; border-radius:8px;}
+  .end-summary .row.win{ background:#fff2c2; font-weight:900; color:#a5700a;}
+  .end-summary .row.bust{ color:#c8283f; }
+  #restartBtn, #nextRoundBtn{
+    padding:12px 34px; border:none; border-radius:18px;
+    background:linear-gradient(180deg,var(--pink),var(--pink-dark)); color:#fff; font-weight:900;
+    font-size:16px; box-shadow:0 5px 0 #c8446a; margin-top:8px;
+  }
+  #restartBtn:active, #nextRoundBtn:active{ transform:translateY(4px); box-shadow:none;}
+</style>
+</head>
+<body>
+
+<!-- ============ SETUP ============ -->
+<div id="setup">
+  <div class="logo">🃏 萌樂21點</div>
+  <div class="subtitle">Q版玩家對抗賽・沒有莊家，比誰最接近21點！</div>
+  <div class="card-panel">
+    <div class="section-label">🎲 選擇參賽人數(含你)</div>
+    <div class="choice-row" id="playerCountRow">
+      <button class="choice-btn" data-n="2">2 人</button>
+      <button class="choice-btn selected" data-n="4">4 人</button>
+      <button class="choice-btn" data-n="3">3 人</button>
+    </div>
+    <div class="section-label">🐾 選擇你的頭像</div>
+    <div class="choice-row" id="avatarRow"></div>
+    <button id="startBtn">發牌開始！</button>
+    <div class="rule-note">規則：每人有 5 次機會(共 5 局)，每局發 2 張牌，<br>輪流「要牌」或「停牌」，超過 21 點爆牌淘汰。<br>每局結束比出該局贏家，5 局結束後贏最多局的人是總冠軍！</div>
+  </div>
+</div>
+
+<!-- ============ GAME ============ -->
+<div id="game">
+  <div class="round-indicator" id="roundIndicator">第 1 / 5 局</div>
+  <div class="players-row" id="playersRow"></div>
+  <div class="status-line" id="statusLine">遊戲準備中...</div>
+  <div class="table-area" id="tableArea"></div>
+  <div class="action-row" id="actionRow" style="display:none;">
+    <button class="action-btn" id="hitBtn">要牌！</button>
+    <button class="action-btn" id="standBtn">停牌！</button>
+  </div>
+</div>
+
+<!-- ============ END OVERLAY (per-round + final) ============ -->
+<div id="overlay">
+  <div class="end-card">
+    <div class="end-round-tag" id="endRoundTag"></div>
+    <div class="end-emoji" id="endEmoji">🏆</div>
+    <div class="end-title" id="endTitle">獲勝！</div>
+    <div class="end-summary" id="endSummary"></div>
+    <button id="nextRoundBtn">下一局</button>
+    <button id="restartBtn" style="display:none;">再玩一次</button>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function(){
+  const AVATARS = ["🐱","🐶","🐰","🐼","🦊","🐻"];
+  const NAMES = ['你','阿福','小綠','阿旺'];
+  const SUITS = [
+    {key:'heart', symbol:'♥', color:'red', mascot:'🐰'},
+    {key:'diamond', symbol:'♦', color:'red', mascot:'🦊'},
+    {key:'club', symbol:'♣', color:'black', mascot:'🐼'},
+    {key:'spade', symbol:'♠', color:'black', mascot:'🐻'}
+  ];
+  const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  const TOTAL_ROUNDS = 5;
+  let chosenAvatar = 0;
+  let playerCount = 4;
+
+  // ---------- 連線模式偵測 ----------
+  const qs = new URLSearchParams(location.search);
+  const MP = {
+    enabled: !!(qs.get('room') && qs.get('token')),
+    roomCode: qs.get('room') || '',
+    myToken: qs.get('token') || '',
+    socket: null,
+  };
+
+  // ---------- setup wiring ----------
+  const avatarRow = document.getElementById('avatarRow');
+  AVATARS.forEach((a,i)=>{
+    const b = document.createElement('button');
+    b.className = 'avatar-btn'+(i===0?' selected':'');
+    b.textContent = a;
+    b.onclick = ()=>{
+      [...avatarRow.children].forEach(c=>c.classList.remove('selected'));
+      b.classList.add('selected');
+      chosenAvatar = i;
+    };
+    avatarRow.appendChild(b);
+  });
+  document.getElementById('playerCountRow').addEventListener('click',e=>{
+    const btn = e.target.closest('.choice-btn');
+    if(!btn) return;
+    [...document.getElementById('playerCountRow').children].forEach(c=>c.classList.remove('selected'));
+    btn.classList.add('selected');
+    playerCount = parseInt(btn.dataset.n,10);
+  });
+  document.getElementById('startBtn').onclick = ()=>{
+    document.getElementById('setup').style.display='none';
+    document.getElementById('game').style.display='block';
+    initMatch();
+  };
+  document.getElementById('restartBtn').onclick = ()=>{
+    document.getElementById('overlay').style.display='none';
+    document.getElementById('setup').style.display='flex';
+  };
+  document.getElementById('nextRoundBtn').onclick = ()=>{
+    document.getElementById('overlay').style.display='none';
+    startRound();
+  };
+
+  // ============================================================
+  // 連線模式：一進畫面就直接連線加入房間，跳過設定畫面；
+  // 牌堆/發牌由伺服器權威保管，每人只收到自己的手牌，直到該局結束才由伺服器
+  // 一次性把所有人的手牌揭曉出來廣播，本地不做任何勝負/發牌判定，避免作弊。
+  // ============================================================
+  if (MP.enabled) {
+    document.getElementById('setup').style.display = 'none';
+    document.getElementById('game').style.display = 'block';
+    setStatus('連線中，等待遊戲開始…');
+    document.getElementById('nextRoundBtn').style.display = 'none';
+    document.getElementById('restartBtn').style.display = 'none';
+
+    MP.socket = io();
+    MP.socket.emit('join_as_participant', { roomCode: MP.roomCode, playerToken: MP.myToken });
+
+    MP.socket.on('blackjack_round_start', (payload) => { mpRoundStart(payload); });
+
+    MP.socket.on('blackjack_public_update', (pub) => {
+      if (!match) return;
+      state.currentIndex = pub.currentIndex;
+      match.players.forEach(p => {
+        const st = pub.statuses[p.token];
+        if (!st) return;
+        p.busted = st.busted; p.stood = st.stood;
+        if (!p.isHuman) p.handCount = st.handCount;
+      });
+      renderTable();
+    });
+
+    MP.socket.on('blackjack_your_turn', () => {
+      const human = match.players.find(p=>p.isHuman);
+      setStatus('輪到你了！目前 '+computeTotal(human.hand)+' 點，要牌還是停牌？');
+      document.getElementById('actionRow').style.display = 'block';
+      document.getElementById('hitBtn').onclick = () => {
+        document.getElementById('actionRow').style.display = 'none';
+        MP.socket.emit('blackjack_action', { action:'hit' });
+      };
+      document.getElementById('standBtn').onclick = () => {
+        document.getElementById('actionRow').style.display = 'none';
+        MP.socket.emit('blackjack_action', { action:'stand' });
+      };
+    });
+
+    MP.socket.on('blackjack_your_card', ({ hand }) => {
+      const human = match.players.find(p=>p.isHuman);
+      human.hand = hand; human.handCount = hand.length;
+      renderTable();
+      const total = computeTotal(hand);
+      if (total > 21) { human.busted = true; bustFx(human.id); setStatus('你爆牌了！💥'); }
+      else if (total === 21) { setStatus('你拿到 21 點！自動停牌～'); }
+      else {
+        setStatus('目前 '+total+' 點，要牌還是停牌？');
+        document.getElementById('actionRow').style.display = 'block';
+      }
+    });
+
+    MP.socket.on('blackjack_round_over', (payload) => { mpRoundOver(payload); });
+    MP.socket.on('blackjack_match_over', (payload) => { mpMatchOver(payload); });
+
+    MP.socket.on('minigame_result', () => { /* 交由外層棋盤處理overlay關閉，這裡不用額外動作 */ });
+  }
+
+  function mpRoundStart(payload){
+    if (!match) {
+      match = {
+        players: payload.seatOrder.map((s,i) => ({
+          id:i, token:s.token, name: s.token===MP.myToken?'你':s.name,
+          avatar: AVATARS[i%AVATARS.length], isHuman: s.token===MP.myToken, wins: s.wins || 0,
+        })),
+        currentRound: payload.round,
+      };
+    } else {
+      match.currentRound = payload.round;
+      match.players.forEach(p => {
+        const seat = payload.seatOrder.find(s=>s.token===p.token);
+        if (seat) p.wins = seat.wins;
+      });
+    }
+    match.players.forEach(p => {
+      p.busted = false; p.stood = false;
+      if (p.isHuman) { p.hand = payload.yourHand; p.handCount = payload.yourHand.length; }
+      else { p.hand = []; p.handCount = 2; }
+    });
+    state = { deck: null, currentIndex: 0, revealed: false, winnerIds: [] };
+    document.getElementById('roundIndicator').textContent = '第 '+payload.round+' / '+payload.totalRounds+' 局';
+    renderPlayersRow();
+    renderTable();
+    setStatus('第 '+payload.round+' 局發牌完成！輪流要牌或停牌...');
+  }
+
+  function mpRoundOver(payload){
+    state.revealed = true;
+    match.players.forEach(p => {
+      p.hand = payload.hands[p.token] || p.hand;
+      p.wins = payload.wins[p.token] || 0;
+    });
+    state.winnerIds = match.players.filter(p => payload.winners.includes(p.token)).map(p=>p.id);
+    renderTable();
+    updateBadges();
+
+    document.getElementById('overlay').style.display='flex';
+    document.getElementById('endRoundTag').textContent = '第 '+payload.round+' / '+payload.totalRounds+' 局結果';
+    const winners = match.players.filter(p => payload.winners.includes(p.token));
+    const humanWon = winners.some(w=>w.isHuman);
+    document.getElementById('endEmoji').textContent = winners.length===0 ? '🀫' : (humanWon ? '🏆' : '😢');
+    if (winners.length===0) {
+      document.getElementById('endTitle').textContent = '本局全員爆牌！';
+    } else if (winners.length>1) {
+      document.getElementById('endTitle').textContent = winners.map(w=>w.name).join('、')+' 平手贏得本局！';
+      spawnConfetti(40); spawnTrophyBurst();
+    } else {
+      document.getElementById('endTitle').textContent = winners[0].isHuman ? '你贏得本局！' : winners[0].name+' 贏得本局！';
+      spawnConfetti(40); spawnTrophyBurst();
+    }
+    const summary = document.getElementById('endSummary');
+    summary.innerHTML = match.players.map(p=>{
+      const t = payload.totals[p.token];
+      const isWinner = payload.winners.includes(p.token);
+      const cls = p.busted ? 'bust' : (isWinner ? 'win' : '');
+      const tag = p.busted ? '爆牌 💥' : (isWinner ? t+' 點 🏆' : t+' 點');
+      return `<div class="row ${cls}"><span>${p.avatar} ${p.name}</span><span>${tag}</span></div>`;
+    }).join('');
+    document.getElementById('nextRoundBtn').style.display = 'none';
+    document.getElementById('restartBtn').style.display = 'none';
+    setStatus(payload.isFinalRound ? '5 局全部結束，準備公佈總戰績…' : '下一局即將開始…');
+  }
+
+  function mpMatchOver(payload){
+    match.players.forEach(p => { p.wins = payload.wins[p.token] || 0; });
+    const champs = match.players.filter(p => payload.championTokens.includes(p.token));
+    champs.forEach(c => { const el = document.getElementById('pb-'+c.id); if (el) el.classList.add('champion'); });
+
+    document.getElementById('overlay').style.display='flex';
+    document.getElementById('endRoundTag').textContent = '5 局全部結束・總戰績';
+    const humanIsChamp = champs.some(c=>c.isHuman);
+    document.getElementById('endEmoji').textContent = humanIsChamp ? '👑' : '🏆';
+    document.getElementById('endTitle').textContent = champs.length>1
+      ? champs.map(c=>c.name).join('、')+' 並列總冠軍！'
+      : (champs[0].isHuman ? '你是總冠軍！👑' : champs[0].name+' 是總冠軍！');
+    const summary = document.getElementById('endSummary');
+    summary.innerHTML = match.players.slice().sort((a,b)=>b.wins-a.wins).map(p=>{
+      const isChamp = champs.includes(p);
+      const cls = isChamp ? 'win' : '';
+      return `<div class="row ${cls}"><span>${p.avatar} ${p.name}</span><span>贏 ${p.wins} 局${isChamp?' 👑':''}</span></div>`;
+    }).join('');
+    spawnConfetti(90);
+    spawnTrophyBurst();
+    setTimeout(spawnTrophyBurst, 300);
+  }
+
+  // ---------- deck ----------
+  function buildDeck(){
+    const deck = [];
+    let id=0;
+    SUITS.forEach(s=>{
+      RANKS.forEach(r=>{
+        deck.push({id:id++, suit:s.key, rank:r});
+      });
+    });
+    for(let i=deck.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [deck[i],deck[j]]=[deck[j],deck[i]];
+    }
+    return deck;
+  }
+  function suitInfo(key){ return SUITS.find(s=>s.key===key); }
+  function cardValue(rank){
+    if(rank==='A') return 11;
+    if(rank==='J'||rank==='Q'||rank==='K') return 10;
+    return parseInt(rank,10);
+  }
+  function computeTotal(cards){
+    let total = 0, aces = 0;
+    cards.forEach(c=>{
+      total += cardValue(c.rank);
+      if(c.rank==='A') aces++;
+    });
+    while(total>21 && aces>0){ total -= 10; aces--; }
+    return total;
+  }
+
+  // ---------- match / round state ----------
+  let match = null; // persists across rounds: players (with winCount), currentRound
+  let state = null; // per-round state
+  function rand(min,max){ return Math.random()*(max-min)+min; }
+  function delay(ms){ return new Promise(res=>setTimeout(res,ms)); }
+
+  function initMatch(){
+    const avatars = [AVATARS[chosenAvatar]];
+    const pool = AVATARS.filter((_,i)=>i!==chosenAvatar);
+    for(let i=1;i<playerCount;i++) avatars.push(pool[(i-1)%pool.length]);
+
+    const players = [];
+    for(let i=0;i<playerCount;i++){
+      players.push({
+        id:i, name: i===0?'你':NAMES[i], avatar: avatars[i], isHuman: i===0,
+        hitThreshold: Math.floor(rand(15,19)),
+        wins: 0
+      });
+    }
+    match = { players, currentRound: 1 };
+    renderPlayersRow();
+    startRound();
+  }
+
+  function startRound(){
+    const deck = buildDeck();
+    match.players.forEach(p=>{
+      p.hand = deck.splice(0,2);
+      p.busted = false;
+      p.stood = false;
+    });
+    state = { deck, currentIndex:0, revealed:false, winnerIds:[] };
+    document.getElementById('roundIndicator').textContent = '第 '+match.currentRound+' / '+TOTAL_ROUNDS+' 局';
+    renderPlayersRow();
+    renderTable();
+    setStatus('第 '+match.currentRound+' 局發牌完成！輪流要牌或停牌...');
+    setTimeout(runTurnLoop, 700);
+  }
+
+  function renderPlayersRow(){
+    const row = document.getElementById('playersRow');
+    row.innerHTML = '';
+    match.players.forEach(p=>{
+      const div = document.createElement('div');
+      div.className = 'p-badge';
+      div.id = 'pb-'+p.id;
+      div.innerHTML = `<div class="av">${p.avatar}</div><div class="nm">${p.name}</div><div class="st" id="pbst-${p.id}"></div><div class="wins">🏆 ${p.wins}</div>`;
+      row.appendChild(div);
+    });
+  }
+
+  function updateBadges(){
+    match.players.forEach(p=>{
+      const el = document.getElementById('pb-'+p.id);
+      el.classList.toggle('active', p.id===state.currentIndex && !state.revealed);
+      el.classList.toggle('busted', p.busted);
+      const st = document.getElementById('pbst-'+p.id);
+      st.textContent = p.busted ? '爆牌' : (p.stood ? '停牌' : '');
+      const wins = el.querySelector('.wins');
+      if(wins) wins.textContent = '🏆 '+p.wins;
+    });
+  }
+
+  function cardHTML(c){
+    const info = suitInfo(c.suit);
+    return `<div class="mascot">${info.mascot}</div>
+            <div class="rank">${c.rank}</div>
+            <div class="suit">${info.symbol}</div>`;
+  }
+
+  function renderTable(){
+    const area = document.getElementById('tableArea');
+    area.innerHTML = '';
+    match.players.forEach(p=>{
+      const row = document.createElement('div');
+      row.className = 'hand-row' + (p.id===state.currentIndex && !state.revealed ? ' active-row' : '');
+      const showFace = p.isHuman || state.revealed;
+      const total = showFace ? computeTotal(p.hand) : 0;
+      let badgeClass = '';
+      if(p.busted) badgeClass = 'bust';
+      else if(state.revealed && state.winnerIds.includes(p.id)) badgeClass = 'win';
+
+      const cardsHTML = showFace
+        ? p.hand.map(c=> `<div class="card ${suitInfo(c.suit).color}">${cardHTML(c)}</div>`).join('')
+        : Array.from({length: p.handCount || p.hand.length || 2}).map(()=>`<div class="card-back">🀫</div>`).join('');
+
+      row.innerHTML = `
+        <div class="hand-row-head">
+          <div class="who">${p.avatar} ${p.name}</div>
+          <div class="total-badge ${badgeClass}">${showFace ? total+' 點' : '？'}</div>
+        </div>
+        <div class="cards-strip">${cardsHTML}</div>
+      `;
+      area.appendChild(row);
+    });
+    updateBadges();
+  }
+
+  function setStatus(msg){ document.getElementById('statusLine').textContent = msg; }
+
+  // clear turn-change announcement, per user request: "OO 思考中...." for AI turns
+  async function announceTurn(p){
+    if(p.isHuman){
+      setStatus('輪到你了！目前 '+computeTotal(p.hand)+' 點，要牌還是停牌？');
+    } else {
+      setStatus(p.name+' 玩家思考中....');
+      await delay(550);
+    }
+  }
+
+  function spawnBoom(x,y){
+    const emojis = ['💥','✨','⭐'];
+    for(let i=0;i<12;i++){
+      const el = document.createElement('div');
+      el.className='boom-particle';
+      el.textContent = emojis[Math.floor(Math.random()*emojis.length)];
+      const angle = Math.random()*Math.PI*2;
+      const dist = 50+Math.random()*80;
+      el.style.left = x+'px'; el.style.top = y+'px';
+      el.style.setProperty('--dx', (Math.cos(angle)*dist).toFixed(1)+'px');
+      el.style.setProperty('--dy', (Math.sin(angle)*dist).toFixed(1)+'px');
+      el.style.setProperty('--rot', (Math.random()*360-180).toFixed(0)+'deg');
+      document.body.appendChild(el);
+      setTimeout(()=>el.remove(), 650);
+    }
+  }
+
+  function bustFx(playerId){
+    const el = document.getElementById('pb-'+playerId);
+    const rect = el.getBoundingClientRect();
+    spawnBoom(rect.left+rect.width/2, rect.top+rect.height/2);
+    el.classList.add('shake-strong');
+    setTimeout(()=> el.classList.remove('shake-strong'), 420);
+  }
+
+  function spawnConfetti(count){
+    const emojis = ['🎉','🎊','✨','⭐','💛','🏆'];
+    for(let i=0;i<count;i++){
+      const el = document.createElement('div');
+      el.className = 'confetti-piece';
+      el.textContent = emojis[Math.floor(Math.random()*emojis.length)];
+      el.style.left = Math.random()*100+'vw';
+      el.style.fontSize = (16+Math.random()*16)+'px';
+      el.style.animationDuration = (1.8+Math.random()*1.4)+'s';
+      el.style.animationDelay = (Math.random()*0.35)+'s';
+      document.body.appendChild(el);
+      setTimeout(()=> el.remove(), 3600);
+    }
+  }
+
+  function spawnTrophyBurst(){
+    const el = document.createElement('div');
+    el.className = 'trophy-burst';
+    el.textContent = '🏆';
+    el.style.left = '50%';
+    el.style.top = '30%';
+    document.body.appendChild(el);
+    setTimeout(()=> el.remove(), 950);
+  }
+
+  function endRound(){
+    state.revealed = true;
+    const alive = match.players.filter(p=>!p.busted);
+    let maxTotal = -1;
+    alive.forEach(p=>{ const t = computeTotal(p.hand); if(t>maxTotal) maxTotal=t; });
+    const winners = alive.filter(p=> computeTotal(p.hand)===maxTotal);
+    state.winnerIds = winners.map(w=>w.id);
+    winners.forEach(w=> w.wins++);
+    renderTable();
+    updateBadges();
+
+    const isFinalRound = match.currentRound >= TOTAL_ROUNDS;
+    document.getElementById('overlay').style.display='flex';
+    document.getElementById('endRoundTag').textContent = '第 '+match.currentRound+' / '+TOTAL_ROUNDS+' 局結果';
+
+    const humanWon = winners.some(w=>w.isHuman);
+    document.getElementById('endEmoji').textContent = winners.length===0 ? '🀫' : (humanWon ? '🏆' : '😢');
+    if(winners.length===0){
+      document.getElementById('endTitle').textContent = '本局全員爆牌！';
+    } else if(winners.length>1){
+      document.getElementById('endTitle').textContent = winners.map(w=>w.name).join('、')+' 平手贏得本局！';
+      spawnConfetti(40); spawnTrophyBurst();
+    } else {
+      document.getElementById('endTitle').textContent = winners[0].isHuman ? '你贏得本局！' : winners[0].name+' 贏得本局！';
+      spawnConfetti(40); spawnTrophyBurst();
+    }
+
+    const summary = document.getElementById('endSummary');
+    summary.innerHTML = match.players.map(p=>{
+      const t = computeTotal(p.hand);
+      const isWinner = state.winnerIds.includes(p.id);
+      const cls = p.busted ? 'bust' : (isWinner ? 'win' : '');
+      const tag = p.busted ? '爆牌 💥' : (isWinner ? t+' 點 🏆' : t+' 點');
+      return `<div class="row ${cls}"><span>${p.avatar} ${p.name}</span><span>${tag}</span></div>`;
+    }).join('');
+
+    if(isFinalRound){
+      document.getElementById('nextRoundBtn').style.display = 'none';
+      document.getElementById('restartBtn').style.display = 'inline-block';
+      setTimeout(showFinalChampion, 250);
+    } else {
+      document.getElementById('nextRoundBtn').style.display = 'inline-block';
+      document.getElementById('restartBtn').style.display = 'none';
+      match.currentRound++;
+    }
+  }
+
+  function showFinalChampion(){
+    const maxWins = Math.max(...match.players.map(p=>p.wins));
+    const champs = match.players.filter(p=>p.wins===maxWins);
+    champs.forEach(c=>{
+      const el = document.getElementById('pb-'+c.id);
+      if(el) el.classList.add('champion');
+    });
+
+    document.getElementById('overlay').style.display='flex';
+    document.getElementById('endRoundTag').textContent = '5 局全部結束・總戰績';
+    const humanIsChamp = champs.some(c=>c.isHuman);
+    document.getElementById('endEmoji').textContent = humanIsChamp ? '👑' : '🏆';
+    document.getElementById('endTitle').textContent = champs.length>1
+      ? champs.map(c=>c.name).join('、')+' 並列總冠軍！'
+      : (champs[0].isHuman ? '你是總冠軍！👑' : champs[0].name+' 是總冠軍！');
+
+    const summary = document.getElementById('endSummary');
+    summary.innerHTML = match.players.slice().sort((a,b)=>b.wins-a.wins).map(p=>{
+      const isChamp = champs.includes(p);
+      const cls = isChamp ? 'win' : '';
+      return `<div class="row ${cls}"><span>${p.avatar} ${p.name}</span><span>贏 ${p.wins} 局${isChamp?' 👑':''}</span></div>`;
+    }).join('');
+
+    spawnConfetti(90);
+    spawnTrophyBurst();
+    setTimeout(spawnTrophyBurst, 300);
+  }
+
+  async function runTurnLoop(){
+    for(state.currentIndex=0; state.currentIndex<match.players.length; state.currentIndex++){
+      const p = match.players[state.currentIndex];
+      renderTable();
+      await announceTurn(p);
+
+      if(computeTotal(p.hand)===21){
+        p.stood = true;
+        setStatus(p.name+' 拿到 21 點！自動停牌～');
+        await delay(600);
+        continue;
+      }
+
+      if(p.isHuman){
+        document.getElementById('actionRow').style.display='block';
+
+        let done = false;
+        while(!done){
+          const action = await new Promise(res=>{
+            document.getElementById('hitBtn').onclick = ()=>res('hit');
+            document.getElementById('standBtn').onclick = ()=>res('stand');
+          });
+          if(action==='stand'){ p.stood = true; done = true; break; }
+          p.hand.push(state.deck.pop());
+          renderTable();
+          const t = computeTotal(p.hand);
+          if(t>21){
+            p.busted = true; done = true;
+            bustFx(p.id);
+            setStatus('你爆牌了！💥');
+            await delay(700);
+          } else if(t===21){
+            p.stood = true; done = true;
+            setStatus('你拿到 21 點！自動停牌～');
+            await delay(500);
+          } else {
+            setStatus('目前 '+t+' 點，要牌還是停牌？');
+          }
+        }
+        document.getElementById('actionRow').style.display='none';
+      } else {
+        while(computeTotal(p.hand) < p.hitThreshold){
+          p.hand.push(state.deck.pop());
+          renderTable();
+          const t = computeTotal(p.hand);
+          await delay(500);
+          if(t>21){ p.busted = true; break; }
+          if(t===21) break;
+        }
+        p.stood = true;
+        renderTable();
+        await delay(300);
+      }
+    }
+    setStatus('本局大家都結束了，公佈牌面！');
+    await delay(800);
+    endRound();
+  }
+})();
+</script>
+</body>
+</html>

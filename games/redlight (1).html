@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>萌樂木頭人 - 1、2、3！</title>
+<style>
+  :root{
+    --grass-1:#8fd68a;
+    --grass-2:#6dbf6e;
+    --cream:#fff8ec;
+    --pink:#ff8fab;
+    --pink-dark:#ef5f86;
+    --gold:#ffc857;
+    --ink:#3a2b22;
+    --road:#f4ead0;
+    --shadow: 0 6px 0 rgba(0,0,0,0.15);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; font-family:"Segoe UI Rounded","PingFang TC","Microsoft JhengHei",sans-serif;
+    background: radial-gradient(circle at 50% 0%, #eafff0, #bdeecb 55%, #8fd6a3 100%);
+    color:var(--ink); overflow-x:hidden;
+  }
+  h1,h2,h3{margin:0;}
+  button{font-family:inherit; cursor:pointer;}
+
+  /* ---------- SETUP ---------- */
+  #setup{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    min-height:100vh; padding:24px; text-align:center;
+  }
+  .logo{
+    font-size:40px; font-weight:900; color:var(--pink-dark);
+    text-shadow: 3px 3px 0 #fff, 6px 6px 0 rgba(0,0,0,0.08);
+    letter-spacing:2px; margin-bottom:4px;
+  }
+  .subtitle{ color:#3d6b46; font-weight:600; margin-bottom:26px;}
+  .card{
+    background:var(--cream); border-radius:28px; padding:28px 30px;
+    box-shadow: var(--shadow), 0 10px 30px rgba(0,0,0,0.12);
+    border:4px solid #fff; max-width:420px; width:100%;
+  }
+  .section-label{font-weight:800; margin:14px 0 10px; color:#7a5b2f; font-size:15px;}
+  .choice-row{display:flex; gap:10px; justify-content:center; flex-wrap:wrap;}
+  .choice-btn{
+    padding:12px 18px; border-radius:16px; border:3px solid #f0dcb8; background:#fff;
+    font-weight:800; font-size:16px; color:#8a6a3a; transition:transform .12s;
+  }
+  .choice-btn.selected{ background:var(--gold); border-color:#e2a72e; color:#5c3e12; transform:scale(1.08);}
+  .avatar-btn{
+    font-size:30px; padding:8px 10px; border-radius:50%; border:3px solid #f0dcb8; background:#fff;
+  }
+  .avatar-btn.selected{ background:#ffe08a; border-color:#e2a72e; transform:scale(1.15);}
+  #startBtn{
+    margin-top:22px; padding:14px 40px; border:none; border-radius:20px;
+    background:linear-gradient(180deg,var(--pink),var(--pink-dark)); color:#fff; font-weight:900;
+    font-size:19px; box-shadow:0 5px 0 #c8446a; letter-spacing:1px;
+  }
+  #startBtn:active{ transform:translateY(4px); box-shadow:none;}
+  .rule-note{font-size:12.5px; color:#8a8a8a; margin-top:16px; line-height:1.6;}
+
+  /* ---------- GAME ---------- */
+  #game{ display:none; min-height:100vh; padding:14px; }
+  .topbar{
+    display:flex; justify-content:space-between; align-items:center;
+    background:rgba(255,255,255,0.85); border-radius:18px; padding:8px 18px; margin-bottom:10px;
+    box-shadow:0 3px 10px rgba(0,0,0,0.08); font-weight:800; color:#3a6b52;
+  }
+
+  .judge-wrap{
+    display:flex; flex-direction:column; align-items:center; margin-bottom:14px;
+  }
+  .judge-face{
+    font-size:64px; transition:transform .15s;
+  }
+  .judge-face.flip{ transform:scale(1.2) rotate(-4deg); }
+  .status-banner{
+    margin-top:4px; font-size:19px; font-weight:900; padding:6px 22px; border-radius:16px;
+    background:var(--cream); box-shadow:0 3px 8px rgba(0,0,0,0.15); border:3px solid #fff;
+  }
+  .status-banner.green{ color:#1f7a3d; }
+  .status-banner.red{ color:#c8283f; animation: shake .25s 2; }
+  @keyframes shake{ 0%,100%{transform:translateX(0);} 25%{transform:translateX(-4px);} 75%{transform:translateX(4px);} }
+
+  .phase-bar-wrap{
+    width:220px; height:8px; background:#e4e4e4; border-radius:6px; margin-top:8px; overflow:hidden;
+  }
+  .phase-bar{ height:100%; background:var(--gold); width:100%; }
+  .phase-bar.red{ background:#e6543f; }
+
+  .track-area{
+    max-width:640px; margin:0 auto; background:var(--road); border-radius:20px; padding:16px;
+    box-shadow:inset 0 0 20px rgba(0,0,0,0.08), 0 6px 0 rgba(0,0,0,0.12);
+    border:4px solid #fff;
+  }
+  .lane{
+    position:relative; height:56px; margin-bottom:10px; border-radius:14px;
+    background:repeating-linear-gradient(90deg, var(--grass-1) 0 20px, var(--grass-2) 20px 40px);
+    overflow:visible;
+  }
+  .lane:last-child{ margin-bottom:0; }
+  .lane-flag-start{ position:absolute; left:4px; top:50%; transform:translateY(-50%); font-size:20px;}
+  .lane-flag-finish{ position:absolute; right:4px; top:50%; transform:translateY(-50%); font-size:24px;}
+  .lane-runner{
+    position:absolute; top:50%; transform:translate(-50%,-50%); left:4%;
+    transition: left .15s linear;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .lane-runner .av{
+    width:38px; height:38px; border-radius:50%; background:#fff; border:3px solid var(--pink-dark);
+    display:flex; align-items:center; justify-content:center; font-size:20px;
+    box-shadow:0 3px 6px rgba(0,0,0,0.25);
+  }
+  .lane-runner .nm{
+    font-size:10px; font-weight:800; background:rgba(255,255,255,0.85); border-radius:8px;
+    padding:0 4px; margin-top:2px; white-space:nowrap;
+  }
+  .lane-runner.caught .av{ animation: shakeCatch .4s; border-color:#c8283f; }
+  @keyframes shakeCatch{ 0%,100%{transform:translateX(0) rotate(0);} 25%{transform:translateX(-6px) rotate(-8deg);} 75%{transform:translateX(6px) rotate(8deg);} }
+
+  #actionBtn{
+    display:block; margin:20px auto 0; padding:20px 60px; border:none; border-radius:26px;
+    background:linear-gradient(180deg,var(--pink),var(--pink-dark)); color:#fff; font-weight:900;
+    font-size:24px; box-shadow:0 6px 0 #c8446a; letter-spacing:3px; user-select:none;
+    touch-action:none;
+  }
+  #actionBtn:active{ transform:translateY(5px); box-shadow:none;}
+  #actionBtn.danger{ background:linear-gradient(180deg,#ff6b6b,#e6453f); box-shadow:0 6px 0 #b3271f;}
+  .hint{ text-align:center; margin-top:10px; font-size:13px; color:#3d6b46; font-weight:700;}
+
+  .toast{
+    position:fixed; top:16px; left:50%; transform:translateX(-50%) translateY(-40px);
+    background:#c8283f; color:#fff; font-weight:800; padding:10px 22px; border-radius:16px;
+    box-shadow:0 4px 10px rgba(0,0,0,0.3); opacity:0; transition:all .25s; z-index:60; font-size:15px;
+  }
+  .toast.show{ transform:translateX(-50%) translateY(0); opacity:1; }
+
+  /* ---------- END OVERLAY ---------- */
+  #overlay{
+    display:none; position:fixed; inset:0; background:rgba(20,40,30,0.65);
+    align-items:center; justify-content:center; z-index:50;
+  }
+  .end-card{
+    background:var(--cream); border-radius:28px; padding:34px 40px; text-align:center;
+    border:5px solid #fff; box-shadow:0 12px 0 rgba(0,0,0,0.2); max-width:360px;
+  }
+  .end-emoji{ font-size:60px; }
+  .end-title{ font-size:26px; font-weight:900; color:var(--pink-dark); margin:8px 0;}
+  .end-sub{ font-size:14px; color:#7a5b2f; margin-bottom:20px; line-height:1.6;}
+  #restartBtn{
+    padding:12px 34px; border:none; border-radius:18px;
+    background:linear-gradient(180deg,var(--pink),var(--pink-dark)); color:#fff; font-weight:900;
+    font-size:16px; box-shadow:0 5px 0 #c8446a;
+  }
+  #restartBtn:active{ transform:translateY(4px); box-shadow:none;}
+
+  @media (max-width:520px){
+    .lane{ height:46px; }
+    .lane-runner .av{ width:32px; height:32px; font-size:16px;}
+    #actionBtn{ padding:18px 44px; font-size:20px; width:90%;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ SETUP ============ -->
+<div id="setup">
+  <div class="logo">木頭人大賽</div>
+  <div class="subtitle">Q版 1、2、3！木頭人 搶先衝線</div>
+  <div class="card">
+    <div class="section-label">🏁 選擇參賽人數(含你)</div>
+    <div class="choice-row" id="playerCountRow">
+      <button class="choice-btn" data-n="2">2 人</button>
+      <button class="choice-btn selected" data-n="4">4 人</button>
+      <button class="choice-btn" data-n="3">3 人</button>
+    </div>
+    <div class="section-label">🐾 選擇你的頭像</div>
+    <div class="choice-row" id="avatarRow"></div>
+    <button id="startBtn">開始比賽！</button>
+    <div class="rule-note">規則：裁判背對大家時(綠燈)按住「衝呀！」前進；<br>裁判轉頭喊「1、2、3木頭人！」(紅燈)時要立刻放開，<br>被抓到會直接退回起點！第一個衝線的人獲勝！</div>
+  </div>
+</div>
+
+<!-- ============ GAME ============ -->
+<div id="game">
+  <div class="topbar">
+    <div id="raceStatus">準備開始...</div>
+    <div id="raceTrackLen">終點：100</div>
+  </div>
+
+  <div class="judge-wrap">
+    <div class="judge-face" id="judgeFace">🙈</div>
+    <div class="status-banner green" id="statusBanner">裁判背對大家，準備衝刺！</div>
+    <div class="phase-bar-wrap"><div class="phase-bar" id="phaseBar"></div></div>
+  </div>
+
+  <div class="track-area" id="trackArea"></div>
+
+  <button id="actionBtn">衝呀！</button>
+  <div class="hint">綠燈時按住按鈕前進，紅燈時千萬要放開！</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ============ END OVERLAY ============ -->
+<div id="overlay">
+  <div class="end-card">
+    <div class="end-emoji" id="endEmoji">🏆</div>
+    <div class="end-title" id="endTitle">獲勝！</div>
+    <div class="end-sub" id="endSub"></div>
+    <button id="restartBtn">再玩一次</button>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function(){
+  const AVATARS = ["🐱","🐶","🐰","🐼","🦊","🐻"];
+  const NAMES = ['你','阿福','小綠','阿旺'];
+  const TRACK_LEN = 100;
+  let chosenAvatar = 0;
+  let playerCount = 4;
+
+  // ---------- 連線模式偵測：棋盤用 iframe 帶 room/token/reason 進來時，跳過本機設定畫面，直接連線加入 ----------
+  const qs = new URLSearchParams(location.search);
+  const MP = {
+    enabled: !!(qs.get('room') && qs.get('token')),
+    roomCode: qs.get('room') || '',
+    myToken: qs.get('token') || '',
+    socket: null,
+  };
+
+  // ---------- setup wiring（僅單機測試模式使用）----------
+  const avatarRow = document.getElementById('avatarRow');
+  AVATARS.forEach((a,i)=>{
+    const b = document.createElement('button');
+    b.className = 'avatar-btn'+(i===0?' selected':'');
+    b.textContent = a;
+    b.onclick = ()=>{
+      [...avatarRow.children].forEach(c=>c.classList.remove('selected'));
+      b.classList.add('selected');
+      chosenAvatar = i;
+    };
+    avatarRow.appendChild(b);
+  });
+  document.getElementById('playerCountRow').addEventListener('click',e=>{
+    const btn = e.target.closest('.choice-btn');
+    if(!btn) return;
+    [...document.getElementById('playerCountRow').children].forEach(c=>c.classList.remove('selected'));
+    btn.classList.add('selected');
+    playerCount = parseInt(btn.dataset.n,10);
+  });
+  document.getElementById('startBtn').onclick = ()=>{
+    document.getElementById('setup').style.display='none';
+    document.getElementById('game').style.display='block';
+    initGame();
+  };
+  document.getElementById('restartBtn').onclick = ()=>{
+    document.getElementById('overlay').style.display='none';
+    document.getElementById('setup').style.display='flex';
+    stopGame();
+  };
+
+  // ---------- state ----------
+  let state = null;
+  let tickHandle = null;
+  let phaseTimeout = null;
+
+  function rand(min,max){ return Math.random()*(max-min)+min; }
+
+  // ============================================================
+  // 連線模式：一進畫面就直接連線加入房間，跳過設定畫面，用房間座位順序建立玩家(全部真人，無AI)
+  // ============================================================
+  if (MP.enabled) {
+    document.getElementById('setup').style.display = 'none';
+    document.getElementById('game').style.display = 'block';
+    document.getElementById('raceStatus').textContent = '連線中，等待遊戲開始…';
+
+    MP.socket = io();
+    MP.socket.emit('join_as_participant', { roomCode: MP.roomCode, playerToken: MP.myToken });
+
+    MP.socket.on('redlight_game_start', (payload) => {
+      initMpGame(payload.seatOrder, payload.progress || {});
+    });
+
+    MP.socket.on('redlight_phase', (payload) => {
+      applyServerPhase(payload.phase, payload.phaseEndsAt);
+    });
+
+    MP.socket.on('redlight_move', ({ token, progress }) => {
+      if (!state || state.gameOver) return;
+      const p = state.players.find(pl => pl.token === token);
+      if (p && !p.isLocal) { p.progress = progress; render(); }
+    });
+
+    MP.socket.on('redlight_player_caught', ({ token }) => {
+      if (!state) return;
+      const p = state.players.find(pl => pl.token === token);
+      if (p) catchPlayer(p);
+    });
+
+    MP.socket.on('minigame_result', (payload) => {
+      if (!state || state.gameOver) return;
+      state.gameOver = true;
+      stopGame();
+      const winner = state.players.find(pl => pl.token === payload.winnerToken)
+        || { name: payload.winnerName, isLocal: false };
+      endGame(winner);
+    });
+  }
+
+  function initMpGame(seatOrder, initialProgress){
+    const pool = AVATARS.slice();
+    const players = seatOrder.map((s, i) => ({
+      id: s.token,
+      token: s.token,
+      name: s.token === MP.myToken ? '你' : s.name,
+      avatar: pool[i % pool.length],
+      isLocal: s.token === MP.myToken,
+      progress: initialProgress[s.token] || 0,
+      holding: false,
+      caught: false,
+    }));
+    state = { players, phase:'idle', gameOver:false };
+    buildTrackDOM();
+    render();
+    document.getElementById('raceStatus').textContent = '3、2、1... 開始！';
+    startMpTickLoop();
+  }
+
+  function applyServerPhase(phase, phaseEndsAt){
+    if (!state) return;
+    state.phase = phase;
+    const dur = Math.max(0, phaseEndsAt - Date.now());
+    const judge = document.getElementById('judgeFace');
+    const banner = document.getElementById('statusBanner');
+    const bar = document.getElementById('phaseBar');
+    if (phase === 'green') {
+      judge.textContent = '🙈'; judge.classList.remove('flip');
+      banner.textContent = '🟢 裁判背對大家，快衝呀！'; banner.className = 'status-banner green';
+      document.getElementById('raceStatus').textContent = '綠燈中：按住「衝呀！」前進';
+      bar.className = 'phase-bar';
+    } else {
+      judge.textContent = '😠'; judge.classList.add('flip');
+      banner.textContent = '🔴 1、2、3木頭人！不許動！'; banner.className = 'status-banner red';
+      document.getElementById('raceStatus').textContent = '紅燈中：千萬別按！';
+      bar.className = 'phase-bar red';
+      // 紅燈瞬間：本地玩家若還按著，立刻判定被抓，並回報伺服器讓大家看到
+      const local = state.players.find(p => p.isLocal);
+      if (local && local.holding) {
+        catchPlayer(local);
+        MP.socket.emit('redlight_caught');
+      }
+    }
+    bar.style.transition = 'none';
+    bar.style.width = '100%';
+    requestAnimationFrame(()=>{
+      bar.style.transition = 'width '+dur+'ms linear';
+      bar.style.width = '0%';
+    });
+  }
+
+  function startMpTickLoop(){
+    clearInterval(tickHandle);
+    tickHandle = setInterval(()=>{
+      if (!state || state.gameOver) return;
+      const local = state.players.find(p => p.isLocal);
+      if (!local) return;
+      if (state.phase === 'green') {
+        if (local.holding && !local.caught) {
+          local.progress = Math.min(TRACK_LEN, local.progress + rand(3,6));
+          MP.socket.emit('redlight_move', { progress: local.progress });
+        }
+      } else if (state.phase === 'red') {
+        if (local.holding) { catchPlayer(local); MP.socket.emit('redlight_caught'); }
+      }
+      render();
+      checkWinnerMp();
+    }, 150);
+  }
+
+  function checkWinnerMp(){
+    if (!state || state.gameOver) return;
+    const local = state.players.find(p => p.isLocal);
+    if (local && local.progress >= TRACK_LEN && !local.__reportedFinish) {
+      local.__reportedFinish = true;
+      MP.socket.emit('redlight_finished', {}, ()=>{});
+    }
+  }
+
+  function initGame(){
+    const avatars = [AVATARS[chosenAvatar]];
+    const pool = AVATARS.filter((_,i)=>i!==chosenAvatar);
+    for(let i=1;i<playerCount;i++) avatars.push(pool[(i-1)%pool.length]);
+
+    const players = [];
+    for(let i=0;i<playerCount;i++){
+      players.push({
+        id:i, name: i===0?'你':NAMES[i], avatar: avatars[i], isHuman: i===0,
+        progress:0, holding:false, caught:false,
+        speedMin: rand(2,3.2), speedMax: rand(4,6),
+        risk: rand(0.15,0.35)
+      });
+    }
+    state = { players, phase:'idle', gameOver:false };
+    buildTrackDOM();
+    render();
+
+    document.getElementById('raceStatus').textContent = '3、2、1... 開始！';
+    setTimeout(()=>{
+      startTickLoop();
+      scheduleGreen();
+    }, 1200);
+  }
+
+  function buildTrackDOM(){
+    const track = document.getElementById('trackArea');
+    track.innerHTML = '';
+    state.players.forEach(p=>{
+      const lane = document.createElement('div');
+      lane.className = 'lane';
+      lane.id = 'lane-'+p.id;
+      lane.innerHTML = `
+        <div class="lane-flag-start">🚩</div>
+        <div class="lane-flag-finish">🏁</div>
+        <div class="lane-runner" id="runner-${p.id}">
+          <div class="av">${p.avatar}</div>
+          <div class="nm">${p.name}</div>
+        </div>`;
+      track.appendChild(lane);
+    });
+  }
+
+  function render(){
+    state.players.forEach(p=>{
+      const runner = document.getElementById('runner-'+p.id);
+      if(!runner) return;
+      const pct = 4 + (p.progress/TRACK_LEN) * 90; // keep within lane bounds
+      runner.style.left = pct+'%';
+      runner.classList.toggle('caught', p.caught);
+    });
+  }
+
+  function showToast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(showToast._h);
+    showToast._h = setTimeout(()=> t.classList.remove('show'), 1100);
+  }
+
+  function catchPlayer(p){
+    if(p.progress <= 0 || state.gameOver) return;
+    p.progress = 0;
+    p.caught = true;
+    p.holding = false;
+    showToast('😱 '+p.name+' 被抓到了！退回起點！');
+    setTimeout(()=>{ p.caught = false; }, 450);
+  }
+
+  function scheduleGreen(){
+    if(state.gameOver) return;
+    state.phase = 'green';
+    document.getElementById('judgeFace').textContent = '🙈';
+    document.getElementById('judgeFace').classList.remove('flip');
+    const banner = document.getElementById('statusBanner');
+    banner.textContent = '🟢 裁判背對大家，快衝呀！';
+    banner.className = 'status-banner green';
+    document.getElementById('raceStatus').textContent = '綠燈中：按住「衝呀！」前進';
+
+    const dur = rand(1600,3400);
+    const bar = document.getElementById('phaseBar');
+    bar.className = 'phase-bar';
+    bar.style.transition = 'none';
+    bar.style.width = '100%';
+    requestAnimationFrame(()=>{
+      bar.style.transition = 'width '+dur+'ms linear';
+      bar.style.width = '0%';
+    });
+
+    clearTimeout(phaseTimeout);
+    phaseTimeout = setTimeout(switchToRed, dur);
+  }
+
+  function switchToRed(){
+    if(state.gameOver) return;
+    state.phase = 'red';
+    const judge = document.getElementById('judgeFace');
+    judge.textContent = '😠';
+    judge.classList.add('flip');
+    const banner = document.getElementById('statusBanner');
+    banner.textContent = '🔴 1、2、3木頭人！不許動！';
+    banner.className = 'status-banner red';
+    document.getElementById('raceStatus').textContent = '紅燈中：千萬別按！';
+
+    // instant catch check
+    const human = state.players[0];
+    if(human.holding){ catchPlayer(human); }
+    state.players.slice(1).forEach(ai=>{
+      if(!state.gameOver && Math.random() < ai.risk && ai.progress > 0){ catchPlayer(ai); }
+    });
+    render();
+    checkWinner();
+
+    const dur = rand(1300,2100);
+    const bar = document.getElementById('phaseBar');
+    bar.className = 'phase-bar red';
+    bar.style.transition = 'none';
+    bar.style.width = '100%';
+    requestAnimationFrame(()=>{
+      bar.style.transition = 'width '+dur+'ms linear';
+      bar.style.width = '0%';
+    });
+
+    clearTimeout(phaseTimeout);
+    phaseTimeout = setTimeout(scheduleGreen, dur);
+  }
+
+  function startTickLoop(){
+    clearInterval(tickHandle);
+    tickHandle = setInterval(()=>{
+      if(!state || state.gameOver) return;
+      const human = state.players[0];
+      if(state.phase === 'green'){
+        if(human.holding && !human.caught){
+          human.progress = Math.min(TRACK_LEN, human.progress + rand(3,6));
+        }
+        state.players.slice(1).forEach(ai=>{
+          if(!ai.caught) ai.progress = Math.min(TRACK_LEN, ai.progress + rand(ai.speedMin, ai.speedMax));
+        });
+      } else if(state.phase === 'red'){
+        if(human.holding){ catchPlayer(human); }
+      }
+      render();
+      checkWinner();
+    }, 150);
+  }
+
+  function stopGame(){
+    clearInterval(tickHandle);
+    clearTimeout(phaseTimeout);
+  }
+
+  function checkWinner(){
+    if(!state || state.gameOver) return;
+    const winner = state.players.find(p=> p.progress >= TRACK_LEN);
+    if(winner){
+      state.gameOver = true;
+      stopGame();
+      endGame(winner);
+    }
+  }
+
+  function endGame(winner){
+    const iWon = MP.enabled ? !!winner.isLocal : !!winner.isHuman;
+    document.getElementById('overlay').style.display = 'flex';
+    document.getElementById('endEmoji').textContent = iWon ? '🏆' : '😢';
+    document.getElementById('endTitle').textContent = iWon ? '你贏了！' : winner.name+' 獲勝！';
+    document.getElementById('endSub').textContent = iWon
+      ? '恭喜第一個衝過終點線，木頭人大賽冠軍就是你！'
+      : winner.name+' 搶先衝過終點線，下次再挑戰看看！';
+  }
+
+  // action button — hold to move
+  const actionBtn = document.getElementById('actionBtn');
+  function getLocalPlayer(){
+    if (!state) return null;
+    return MP.enabled ? state.players.find(p => p.isLocal) : state.players[0];
+  }
+  function press(){
+    if(!state || state.gameOver) return;
+    const local = getLocalPlayer();
+    if(!local) return;
+    local.holding = true;
+    actionBtn.classList.toggle('danger', state.phase==='red');
+    if(state.phase === 'red'){
+      catchPlayer(local);
+      if (MP.enabled) MP.socket.emit('redlight_caught');
+    }
+  }
+  function release(){
+    if(!state) return;
+    const local = getLocalPlayer();
+    if(!local) return;
+    local.holding = false;
+    actionBtn.classList.remove('danger');
+  }
+  actionBtn.addEventListener('pointerdown', press);
+  actionBtn.addEventListener('pointerup', release);
+  actionBtn.addEventListener('pointerleave', release);
+  actionBtn.addEventListener('pointercancel', release);
+})();
+</script>
+</body>
+</html>
