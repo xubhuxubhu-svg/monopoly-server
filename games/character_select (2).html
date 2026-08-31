@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>萌樂大富翁 - 角色選擇</title>
+<style>
+  :root{
+    --accent:#e8985a; --accent2:#ffd28a; --bg1:#0f1115; --bg2:#20242f;
+  }
+  html,body{ margin:0; height:100%; overflow:hidden; background:#0f1115;
+    font-family:"PingFang TC","Microsoft JhengHei",-apple-system,sans-serif; }
+  #wrap{ position:absolute; inset:0; display:flex; flex-direction:column; }
+
+  /* ---- 頂部標題列 ---- */
+  #header{
+    padding:18px 24px 10px; text-align:center; flex:0 0 auto;
+  }
+  #header h1{
+    margin:0; font-size:clamp(22px,5vw,34px); font-weight:900; letter-spacing:2px;
+    background:linear-gradient(90deg,#ff8fab,#ffd27a,#8fd9c4,#8fb8ff,#d68fff,#ff8fab);
+    background-size:300% 100%; -webkit-background-clip:text; background-clip:text;
+    -webkit-text-fill-color:transparent; animation:titleShift 6s linear infinite;
+  }
+  @keyframes titleShift{ to{ background-position:300% 0; } }
+  #header p{ margin:6px 0 0; font-size:13px; color:#9aa3b5; }
+
+  /* ---- 3D 檢視區 ---- */
+  #viewportArea{ position:relative; flex:1 1 auto; min-height:0; touch-action:none; }
+  #canvasWrap{ position:absolute; inset:0; }
+  #viewLoading{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    color:#e8e8e8; font-size:13px; background:rgba(0,0,0,0.45); padding:10px 18px;
+    border-radius:20px; display:none; z-index:5; pointer-events:none;
+  }
+  #viewLoading.show{ display:block; }
+
+  #charNamePlate{
+    position:absolute; left:50%; bottom:14px; transform:translateX(-50%);
+    color:#fff; font-size:16px; font-weight:800; text-align:center;
+    background:rgba(20,20,25,0.55); padding:8px 22px; border-radius:16px;
+    border:2px solid var(--accent); pointer-events:none; z-index:4;
+    white-space:nowrap;
+  }
+  #charDesc{
+    position:absolute; left:14px; top:14px; max-width:220px;
+    color:#cfd6e2; font-size:11.5px; line-height:1.6;
+    background:rgba(0,0,0,0.4); padding:10px 12px; border-radius:12px; z-index:4;
+  }
+
+  /* ---- 角色卡片列 ---- */
+  #cardRow{
+    flex:0 0 auto; display:flex; gap:12px; padding:12px 16px;
+    overflow-x:auto; -webkit-overflow-scrolling:touch;
+  }
+  .charCard{
+    flex:0 0 auto; width:112px; background:#1a1d24; border:2px solid #2c313e;
+    border-radius:16px; padding:10px 8px; cursor:pointer; text-align:center;
+    transition:border-color .15s ease, transform .15s ease, background .15s ease;
+    user-select:none;
+  }
+  .charCard:active{ transform:scale(0.96); }
+  .charCard.selected{
+    border-color:var(--accent); background:rgba(232,152,90,0.15);
+    box-shadow:0 0 14px rgba(232,152,90,0.35);
+  }
+  .charCard .emoji{ font-size:30px; line-height:1.2; }
+  .charCard .cname{ margin-top:4px; font-size:12px; font-weight:700; color:#fff; }
+  .charCard .ctag{ margin-top:2px; font-size:10px; color:#8a93a6; }
+
+  /* ---- 底部確認列 ---- */
+  #footerBar{
+    flex:0 0 auto; padding:12px 16px 18px; display:flex; align-items:center; gap:14px;
+  }
+  #footerBar .hint{ flex:1; font-size:11px; color:#7a8296; line-height:1.5; }
+  #confirmBtn{
+    border:none; background:linear-gradient(135deg,#ff9a7a,#ff7ab0); color:#fff;
+    font-size:16px; font-weight:800; padding:14px 30px; border-radius:26px; cursor:pointer;
+    box-shadow:0 8px 20px rgba(255,122,176,0.4); white-space:nowrap;
+  }
+  #confirmBtn:active{ transform:scale(0.96); }
+  #confirmBtn:disabled{ opacity:0.4; box-shadow:none; }
+
+  /* ---- 拖曳鏡頭提示 ---- */
+  #dragHint{
+    position:absolute; right:14px; top:14px; color:#6b7280; font-size:10.5px;
+    background:rgba(0,0,0,0.35); padding:6px 10px; border-radius:10px; z-index:4;
+  }
+</style>
+</head>
+<body>
+
+<div id="wrap">
+  <div id="header">
+    <h1>選擇你的角色</h1>
+    <p>拖曳可旋轉鏡頭 · 選好後按下方按鈕確認</p>
+  </div>
+
+  <div id="viewportArea">
+    <div id="canvasWrap"></div>
+    <div id="viewLoading">角色載入中…</div>
+    <div id="dragHint">拖曳旋轉 / 滾輪縮放</div>
+    <div id="charDesc"></div>
+    <div id="charNamePlate"></div>
+  </div>
+
+  <div id="cardRow"></div>
+
+  <div id="footerBar">
+    <div class="hint">選擇角色後，這個角色會跟著你在棋盤上移動與比賽小遊戲。</div>
+    <button id="confirmBtn" disabled>確認選擇 →</button>
+  </div>
+</div>
+
+<!-- ============ Three.js r128（本地內嵌，避免 CDN 載入問題） ============ -->
+<script src="./three.min.js"></script>
+<script src="./GLTFLoader.js"></script>
+
+<script>
+(function(){
+  'use strict';
+
+  // ======================================================================
+  // 角色資料表：檔案路徑 + 對應相機參數（radius / elevation / azimuth）
+  // 路徑是相對路徑，實際部署時請依你的 Render 靜態資料夾結構調整
+  // 建議：在 repo 根目錄新增 characters/ 資料夾，把 4 個 glb 放進去
+  // ======================================================================
+  const CHAR_DATA = [
+    {
+      id:'char1', name:'長髮女生', emoji:'👩‍🦰', tag:'標準速度',
+      file:'./char1_longhair_woman.glb',
+      cam:{ radius:5.077, elevation:0.162, azimuth:0.010 }, targetY:0.9,
+      desc:'俐落的長髮女生，動作靈巧，適合新手上手。',
+      walkHint:/walk/i
+    },
+    {
+      id:'char2', name:'肌肉猛男', emoji:'💪', tag:'力量型',
+      file:'./char2_muscular_man.glb',
+      cam:{ radius:4.969, elevation:0.072, azimuth:6.240 }, targetY:0.9,
+      desc:'渾身肌肉，走起路來虎虎生風，氣勢十足。',
+      walkHint:/walk/i
+    },
+    {
+      // 這隻狗是完全不同的匯出流程，實際渲染出的模型比人形角色小上百倍
+      // （bind pose 頂點座標本身就是這個尺度，不是鏡頭或程式問題），
+      // 所以鏡頭距離／注視點高度都要用專屬的一組小數值，不能沿用人形角色。
+      id:'char3', name:'四足小狗', emoji:'🐕', tag:'特殊骨架',
+      file:'./char3_dog.glb',
+      cam:{ radius:0.016, elevation:0.35, azimuth:0.6 }, targetY:0.0013,
+      desc:'四腳跑跳的可愛小狗，棋盤上的萌系代表。',
+      walkHint:/.*/
+    },
+    {
+      id:'char4', name:'活力女孩', emoji:'🏊‍♀️', tag:'3種動作',
+      file:'./char4_woman_swim.glb',
+      cam:{ radius:5.259, elevation:0.234, azimuth:6.356 }, targetY:0.9,
+      desc:'擁有跑步／行走／女性化走路 3 種動畫的活力角色。',
+      walkHint:/walk/i
+    }
+  ];
+
+  // ======================================================================
+  // Three.js 場景基礎建置
+  // ======================================================================
+  const canvasWrap = document.getElementById('canvasWrap');
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 200);
+  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio||1));
+  canvasWrap.appendChild(renderer.domElement);
+
+  function resize(){
+    const w = canvasWrap.clientWidth, h = canvasWrap.clientHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w/h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+
+  // 燈光：亮度調到約 1/4，跟主專案角色檢視器一致，避免模型過曝
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x404050, 0.5*0.25*2);
+  scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.9*0.25*2);
+  dir.position.set(2,4,3);
+  scene.add(dir);
+  const amb = new THREE.AmbientLight(0xffffff, 0.35*0.25*2);
+  scene.add(amb);
+
+  // 淡淡的圓形底座，讓角色不會懸空
+  const podium = new THREE.Mesh(
+    new THREE.CircleGeometry(1.4, 48),
+    new THREE.MeshStandardMaterial({ color:0x2a2f3a, roughness:0.9, metalness:0.0 })
+  );
+  podium.rotation.x = -Math.PI/2;
+  podium.position.y = 0;
+  scene.add(podium);
+
+  const camTarget = new THREE.Vector3(0,0.9,0);
+
+  function computeCamPos(target, dist, elev, azim){
+    return new THREE.Vector3(
+      target.x + dist*Math.cos(elev)*Math.sin(azim),
+      target.y + dist*Math.sin(elev),
+      target.z + dist*Math.cos(elev)*Math.cos(azim)
+    );
+  }
+  function applyCamera(dist, elev, azim){
+    camera.position.copy(computeCamPos(camTarget, dist, elev, azim));
+    camera.lookAt(camTarget);
+  }
+
+  // 目前鏡頭參數（可被拖曳/滾輪覆寫）
+  let curCam = { radius:5, elevation:0.2, azimuth:0.3 };
+  applyCamera(curCam.radius, curCam.elevation, curCam.azimuth);
+
+  // 拖曳旋轉鏡頭（不改變 radius，只調角度）
+  let dragging=false, lastX=0, lastY=0;
+  renderer.domElement.addEventListener('pointerdown', e=>{
+    dragging=true; lastX=e.clientX; lastY=e.clientY;
+  });
+  window.addEventListener('pointerup', ()=>dragging=false);
+  window.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    curCam.azimuth -= (e.clientX-lastX)*0.008;
+    curCam.elevation = Math.max(0.05, Math.min(1.4, curCam.elevation + (e.clientY-lastY)*0.008));
+    lastX=e.clientX; lastY=e.clientY;
+    applyCamera(curCam.radius, curCam.elevation, curCam.azimuth);
+  }, {passive:true});
+  renderer.domElement.addEventListener('wheel', e=>{
+    e.preventDefault();
+    curCam.radius = Math.max(0.005, Math.min(60, curCam.radius*(1+e.deltaY*0.001)));
+    applyCamera(curCam.radius, curCam.elevation, curCam.azimuth);
+  }, {passive:false});
+
+  // ======================================================================
+  // GLTF 載入 / 切換角色
+  // ======================================================================
+  const loader = new THREE.GLTFLoader();
+  const loadedCache = new Map();   // id -> { gltf, mixer, action }
+  let currentRoot = null;
+  let currentMixer = null;
+  const loadingEl = document.getElementById('viewLoading');
+  const namePlateEl = document.getElementById('charNamePlate');
+  const descEl = document.getElementById('charDesc');
+  const confirmBtn = document.getElementById('confirmBtn');
+
+  let selectedId = null;
+  let previewingId = null;
+
+  function clearCurrentModel(){
+    if(currentRoot){ scene.remove(currentRoot); }
+    currentRoot = null;
+    currentMixer = null;
+  }
+
+  function showModel(entry, gltf){
+    clearCurrentModel();
+    const root = gltf.scene;
+    root.traverse(o=>{
+      if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; }
+      if(o.isSkinnedMesh && o.material){ o.material.skinning = true; }
+    });
+    scene.add(root);
+    currentRoot = root;
+    applyCamera(curCam.radius, curCam.elevation, curCam.azimuth);
+
+    if(gltf.animations && gltf.animations.length){
+      currentMixer = new THREE.AnimationMixer(root);
+      const clip = gltf.animations.find(c=>entry.walkHint.test(c.name)) || gltf.animations[0];
+      const action = currentMixer.clipAction(clip);
+      action.play();
+    }
+  }
+
+  function loadCharacter(entry){
+    previewingId = entry.id;
+    namePlateEl.textContent = entry.name;
+    descEl.textContent = entry.desc;
+    curCam = { radius:entry.cam.radius, elevation:entry.cam.elevation, azimuth:entry.cam.azimuth };
+    camTarget.set(0, entry.targetY, 0);
+    applyCamera(curCam.radius, curCam.elevation, curCam.azimuth);
+
+    if(loadedCache.has(entry.id)){
+      showModel(entry, loadedCache.get(entry.id));
+      return;
+    }
+    loadingEl.classList.add('show');
+    loader.load(entry.file, (gltf)=>{
+      loadedCache.set(entry.id, gltf);
+      loadingEl.classList.remove('show');
+      // 避免使用者已經切到別的角色卡片
+      if(previewingId === entry.id) showModel(entry, gltf);
+    }, undefined, (err)=>{
+      loadingEl.classList.remove('show');
+      loadingEl.classList.add('show');
+      loadingEl.textContent = '載入失敗：找不到 ' + entry.file;
+      console.error('GLB 載入失敗', entry.file, err);
+    });
+  }
+
+  // ======================================================================
+  // 角色卡片列
+  // ======================================================================
+  const cardRow = document.getElementById('cardRow');
+  CHAR_DATA.forEach(entry=>{
+    const card = document.createElement('div');
+    card.className = 'charCard';
+    card.innerHTML = `
+      <div class="emoji">${entry.emoji}</div>
+      <div class="cname">${entry.name}</div>
+      <div class="ctag">${entry.tag}</div>
+    `;
+    card.addEventListener('click', ()=>{
+      document.querySelectorAll('.charCard').forEach(c=>c.classList.remove('selected'));
+      card.classList.add('selected');
+      selectedId = entry.id;
+      confirmBtn.disabled = false;
+      loadCharacter(entry);
+    });
+    cardRow.appendChild(card);
+    entry._cardEl = card;
+  });
+
+  // 預設先預覽第一個角色（尚未算「選擇」，需按卡片或確認才算選定）
+  loadCharacter(CHAR_DATA[0]);
+
+  // ======================================================================
+  // 確認選擇
+  // ======================================================================
+  confirmBtn.addEventListener('click', ()=>{
+    if(!selectedId) return;
+    const entry = CHAR_DATA.find(c=>c.id===selectedId);
+    const payload = {
+      id: entry.id,
+      name: entry.name,
+      file: entry.file,
+      camera: entry.cam
+    };
+    try{ localStorage.setItem('monoply_selectedCharacter', JSON.stringify(payload)); }catch(e){}
+
+    // 若是被主遊戲用 iframe 嵌入，透過 postMessage 通知父頁面
+    if(window.parent && window.parent !== window){
+      window.parent.postMessage({ type:'character_selected', character: payload }, '*');
+    }
+
+    // 若不是嵌入模式，也可以在這裡改成導頁到主棋盤，例如：
+    // location.href = 'three_board_character_prototype.html?char=' + entry.id;
+    confirmBtn.textContent = '已選擇：' + entry.name + ' ✓';
+  });
+
+  // ======================================================================
+  // 動畫迴圈
+  // ======================================================================
+  const clock = new THREE.Clock();
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+    if(currentMixer) currentMixer.update(dt);
+    // 靜態展示時緩慢自轉一點點，讓角色看起來更生動
+    if(currentRoot && !dragging){
+      currentRoot.rotation.y += dt*0.15;
+    }
+    renderer.render(scene, camera);
+  }
+  resize();
+  animate();
+
+})();
+</script>
+
+</body>
+</html>
