@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>萌樂雀 - 一炮定生死</title>
+<style>
+  :root{
+    --felt-1:#3fae7e;
+    --felt-2:#2c8a63;
+    --cream:#fff8ec;
+    --pink:#ff8fab;
+    --pink-dark:#ef5f86;
+    --gold:#ffc857;
+    --dot-a:#4fa6e0; --dot-b:#dff0ff;
+    --bam-a:#4caf6e; --bam-b:#e3f7e8;
+    --chr-a:#e6543f; --chr-b:#ffe9e4;
+    --ink:#3a2b22;
+    --shadow: 0 6px 0 rgba(0,0,0,0.15);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; font-family:"Segoe UI Rounded","PingFang TC","Microsoft JhengHei",sans-serif;
+    background: radial-gradient(circle at 50% 0%, #d9f5e6, #a9d9c2 55%, #7fbfa0 100%);
+    color:var(--ink); overflow-x:hidden;
+  }
+  h1,h2,h3{margin:0;}
+  button{font-family:inherit; cursor:pointer;}
+
+  /* ---------- SETUP SCREEN ---------- */
+  #setup{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    min-height:100vh; padding:24px; text-align:center;
+  }
+  .logo{
+    font-size:42px; font-weight:900; color:var(--pink-dark);
+    text-shadow: 3px 3px 0 #fff, 6px 6px 0 rgba(0,0,0,0.08);
+    letter-spacing:2px; margin-bottom:4px;
+  }
+  .subtitle{ color:#4a6b57; font-weight:600; margin-bottom:28px;}
+  .card{
+    background:var(--cream); border-radius:28px; padding:28px 30px;
+    box-shadow: var(--shadow), 0 10px 30px rgba(0,0,0,0.12);
+    border:4px solid #fff; max-width:420px; width:100%;
+  }
+  .section-label{font-weight:800; margin:14px 0 10px; color:#7a5b2f; font-size:15px;}
+  .choice-row{display:flex; gap:10px; justify-content:center; flex-wrap:wrap;}
+  .choice-btn{
+    padding:12px 18px; border-radius:16px; border:3px solid #f0dcb8; background:#fff;
+    font-weight:800; font-size:16px; color:#8a6a3a; transition:transform .12s;
+  }
+  .choice-btn.selected{ background:var(--gold); border-color:#e2a72e; color:#5c3e12; transform:scale(1.08);}
+  .avatar-btn{
+    font-size:30px; padding:8px 10px; border-radius:50%; border:3px solid #f0dcb8; background:#fff;
+  }
+  .avatar-btn.selected{ background:#ffe08a; border-color:#e2a72e; transform:scale(1.15);}
+  #startBtn{
+    margin-top:22px; padding:14px 40px; border:none; border-radius:20px;
+    background:linear-gradient(180deg,var(--pink),var(--pink-dark)); color:#fff; font-weight:900;
+    font-size:19px; box-shadow:0 5px 0 #c8446a; letter-spacing:1px;
+  }
+  #startBtn:active{ transform:translateY(4px); box-shadow:none;}
+  .rule-note{font-size:12.5px; color:#8a8a8a; margin-top:16px; line-height:1.6;}
+
+  /* ---------- GAME SCREEN ---------- */
+  #game{ display:none; min-height:100vh; padding:14px; position:relative;}
+  .topbar{
+    display:flex; justify-content:space-between; align-items:center;
+    background:rgba(255,255,255,0.85); border-radius:18px; padding:8px 18px; margin-bottom:10px;
+    box-shadow:0 3px 10px rgba(0,0,0,0.08); font-weight:800; color:#3a6b52;
+  }
+  .status-msg{ font-size:15px; }
+  .wall-count{ font-size:14px; color:#8a6a3a;}
+
+  .table-wrap{
+    position:relative; width:min(720px,96vw); aspect-ratio:1/1; margin:0 auto;
+    border-radius:50%; background:radial-gradient(circle, var(--felt-1), var(--felt-2) 80%);
+    border:14px solid #7a4a2a; box-shadow:0 10px 0 rgba(0,0,0,0.2), inset 0 0 40px rgba(0,0,0,0.25);
+  }
+  .seat{
+    position:absolute; width:150px; text-align:center; color:#fff;
+  }
+  .seat-bottom{ bottom:-6px; left:50%; transform:translateX(-50%);}
+  .seat-top{ top:-6px; left:50%; transform:translateX(-50%);}
+  .seat-left{ left:-40px; top:50%; transform:translateY(-50%);}
+  .seat-right{ right:-40px; top:50%; transform:translateY(-50%);}
+
+  .seat-badge{
+    display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.9);
+    border-radius:20px; padding:4px 12px 4px 4px; box-shadow:0 3px 6px rgba(0,0,0,0.2);
+  }
+  .seat.active .seat-badge{ outline:3px solid var(--gold); }
+  .seat-avatar{
+    width:34px; height:34px; border-radius:50%; background:#ffe;
+    display:flex; align-items:center; justify-content:center; font-size:20px;
+    border:2px solid #fff; box-shadow:0 2px 4px rgba(0,0,0,0.2);
+  }
+  .seat-name{ font-size:13px; font-weight:800; color:#3a2b22;}
+  .seat-count{ font-size:11px; color:#3a2b22; opacity:0.75;}
+  .seat-tenpai{ font-size:10px; color:#c8446a; font-weight:800;}
+
+  .center-info{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    text-align:center; color:#fff; width:240px;
+  }
+  .last-discard-box{
+    min-height:96px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    margin-bottom:8px;
+  }
+  .last-discard-label{
+    font-size:13px; font-weight:800; background:rgba(0,0,0,0.35); border-radius:10px;
+    padding:3px 10px; margin-bottom:6px;
+  }
+  .discard-log{
+    font-size:12px; background:rgba(0,0,0,0.25); border-radius:12px; padding:8px; min-height:40px;
+    display:flex; flex-wrap:wrap; gap:4px; justify-content:center; align-items:center;
+  }
+
+  .mini-tile{
+    width:20px; height:28px; border-radius:4px; background:var(--cream); color:var(--ink);
+    display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800;
+    box-shadow:0 1px 2px rgba(0,0,0,0.3);
+  }
+
+  .hand-area{
+    margin-top:16px; display:flex; justify-content:center; gap:6px; flex-wrap:wrap; min-height:96px;
+  }
+  #tenpaiInfo{
+    text-align:center; font-size:13px; font-weight:800; color:#c8446a; min-height:18px; margin-top:2px;
+  }
+  .tile{
+    width:52px; height:74px; border-radius:10px; position:relative; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    box-shadow: 0 4px 0 rgba(0,0,0,0.18), 0 6px 8px rgba(0,0,0,0.15);
+    border:3px solid #fff; transition:transform .12s; user-select:none;
+    font-weight:900;
+  }
+  .tile:hover{ transform:translateY(-8px);}
+  .tile.disabled{ cursor:default; }
+  .tile.disabled:hover{ transform:none; }
+  .tile .num{ font-size:22px; line-height:1;}
+  .tile .sub{ font-size:10px; margin-top:2px; opacity:0.8;}
+  .tile .mascot{ position:absolute; top:2px; right:3px; font-size:11px;}
+  .tile.dot{ background:linear-gradient(180deg,var(--dot-b),#fff); color:#1f6fae;}
+  .tile.bam{ background:linear-gradient(180deg,var(--bam-b),#fff); color:#2c7a44;}
+  .tile.chr{ background:linear-gradient(180deg,var(--chr-b),#fff); color:#c73c28;}
+
+  /* bigger hand tiles per user request */
+  .hand-area .tile{ width:62px; height:88px; border-radius:12px;}
+  .hand-area .tile .num{ font-size:32px;}
+  .hand-area .tile .sub{ font-size:14px; margin-top:3px;}
+  .hand-area .tile .mascot{ font-size:17px; top:3px; right:4px;}
+
+  /* big center tile (last discard / winning tile) */
+  .tile.big{ width:78px; height:110px; border-radius:14px; border-width:4px;}
+  .tile.big .num{ font-size:40px;}
+  .tile.big .sub{ font-size:16px; margin-top:4px;}
+  .tile.big .mascot{ font-size:20px; top:4px; right:5px;}
+
+  #huBtn, #passBtn{
+    display:none; margin:10px 6px 0; padding:12px 30px; border:none; border-radius:18px;
+    font-weight:900; font-size:19px; letter-spacing:2px;
+  }
+  #huBtn{
+    background:linear-gradient(180deg,var(--gold),#e2a72e); color:#5c3e12;
+    box-shadow:0 5px 0 #b9821b; animation: pulse 1s infinite;
+  }
+  #passBtn{
+    background:#e8e8e8; color:#666; box-shadow:0 5px 0 #bbb;
+  }
+  .btn-row{ text-align:center; }
+  @keyframes pulse{ 0%,100%{transform:scale(1);} 50%{transform:scale(1.06);} }
+
+  /* ---------- END OVERLAY ---------- */
+  #overlay{
+    display:none; position:fixed; inset:0; background:rgba(20,40,30,0.65);
+    align-items:center; justify-content:center; z-index:50;
+  }
+  .end-card{
+    background:var(--cream); border-radius:28px; padding:34px 40px; text-align:center;
+    border:5px solid #fff; box-shadow:0 12px 0 rgba(0,0,0,0.2); max-width:380px;
+  }
+  .end-emoji{ font-size:52px; }
+  .end-title{ font-size:26px; font-weight:900; color:var(--pink-dark); margin:8px 0;}
+  .end-sub{ font-size:14px; color:#7a5b2f; margin-bottom:14px; line-height:1.6;}
+  .win-tile-wrap{ display:flex; flex-direction:column; align-items:center; gap:6px; margin:10px 0 18px;}
+  .win-tile-label{ font-size:13px; font-weight:800; color:#7a5b2f;}
+  #restartBtn{
+    padding:12px 34px; border:none; border-radius:18px;
+    background:linear-gradient(180deg,var(--pink),var(--pink-dark)); color:#fff; font-weight:900;
+    font-size:16px; box-shadow:0 5px 0 #c8446a;
+  }
+  #restartBtn:active{ transform:translateY(4px); box-shadow:none;}
+
+  @media (max-width:520px){
+    .hand-area .tile{ width:44px; height:64px;}
+    .hand-area .tile .num{ font-size:24px;}
+    .tile.big{ width:60px; height:86px;}
+    .tile.big .num{ font-size:30px;}
+    .seat{ width:110px;}
+  }
+</style>
+</head>
+<body>
+<audio id="gameBgm" src="./audio/mahjong_bgm.mp3" loop preload="auto"></audio>
+<button id="musicToggleBtn" style="position:fixed; top:10px; right:10px; z-index:9999; border:none; background:rgba(0,0,0,0.45); color:#fff; font-size:15px; padding:7px 9px; border-radius:12px; cursor:pointer;">🔊</button>
+
+<!-- ============ SETUP ============ -->
+<div id="setup">
+  <div class="logo">萌樂雀</div>
+  <div class="subtitle">Q版簡化麻將・一炮定生死</div>
+  <div class="card">
+    <div class="section-label">🀄 選擇桌上人數(含你)</div>
+    <div class="choice-row" id="playerCountRow">
+      <button class="choice-btn" data-n="2">2 人</button>
+      <button class="choice-btn selected" data-n="4">4 人</button>
+      <button class="choice-btn" data-n="3">3 人</button>
+    </div>
+    <div class="section-label">🐾 選擇你的頭像</div>
+    <div class="choice-row" id="avatarRow"></div>
+    <button id="startBtn">開局！</button>
+    <div class="rule-note">簡化規則：僅使用萬/筒/條(無字牌)、不含碰吃槓；<br>誰先湊成 4 組面子＋1 對將牌即獲勝，一炮定生死！</div>
+  </div>
+</div>
+
+<!-- ============ GAME ============ -->
+<div id="game">
+  <div class="topbar">
+    <div class="status-msg" id="statusMsg">準備中...</div>
+    <div class="wall-count" id="wallCount">牌堆：0</div>
+  </div>
+
+  <div class="table-wrap" id="tableWrap">
+    <div class="center-info">
+      <div class="last-discard-box" id="lastDiscardBox"></div>
+      <div style="font-size:12px; font-weight:800; margin-bottom:4px;">🀫 棄牌紀錄</div>
+      <div class="discard-log" id="discardLog"></div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button id="huBtn">🀄 胡！</button>
+    <button id="passBtn">跳過</button>
+  </div>
+  <div class="hand-area" id="handArea"></div>
+  <div id="tenpaiInfo"></div>
+</div>
+
+<!-- ============ END OVERLAY ============ -->
+<div id="overlay">
+  <div class="end-card">
+    <div class="end-emoji" id="endEmoji">🎉</div>
+    <div class="end-title" id="endTitle">獲勝！</div>
+    <div class="end-sub" id="endSub"></div>
+    <div class="win-tile-wrap" id="winTileWrap"></div>
+    <button id="restartBtn">再玩一局</button>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function(){
+  const AVATARS = ["🐱","🐶","🐰","🐼","🦊","🐻"];
+  const SUIT_INFO = {
+    dot:{cls:'dot', label:'筒', mascot:'🐱'},
+    bam:{cls:'bam', label:'條', mascot:'🐼'},
+    chr:{cls:'chr', label:'萬', mascot:'🐰'}
+  };
+  const CN_NUM = ['','一','二','三','四','五','六','七','八','九'];
+  let chosenAvatar = 0;
+  let playerCount = 4;
+
+  // ---------- 連線模式偵測 ----------
+  const qs = new URLSearchParams(location.search);
+  const MP = {
+    enabled: !!(qs.get('room') && qs.get('token')),
+    roomCode: qs.get('room') || '',
+    myToken: qs.get('token') || '',
+    socket: null,
+  };
+
+  // ---------- setup screen wiring ----------
+  const avatarRow = document.getElementById('avatarRow');
+  AVATARS.forEach((a,i)=>{
+    const b = document.createElement('button');
+    b.className = 'avatar-btn'+(i===0?' selected':'');
+    b.textContent = a;
+    b.onclick = ()=>{
+      [...avatarRow.children].forEach(c=>c.classList.remove('selected'));
+      b.classList.add('selected');
+      chosenAvatar = i;
+    };
+    avatarRow.appendChild(b);
+  });
+  document.getElementById('playerCountRow').addEventListener('click',e=>{
+    const btn = e.target.closest('.choice-btn');
+    if(!btn) return;
+    [...document.getElementById('playerCountRow').children].forEach(c=>c.classList.remove('selected'));
+    btn.classList.add('selected');
+    playerCount = parseInt(btn.dataset.n,10);
+  });
+  document.getElementById('startBtn').onclick = ()=>{
+    document.getElementById('setup').style.display='none';
+    document.getElementById('game').style.display='block';
+    initGame();
+  };
+  document.getElementById('restartBtn').onclick = ()=>{
+    document.getElementById('overlay').style.display='none';
+    document.getElementById('setup').style.display='flex';
+  };
+
+  // ============================================================
+  // 連線模式：一進畫面就直接連線加入房間，跳過設定畫面；
+  // 手牌隱私由伺服器保管，本地只收到「自己的手牌」+「別人的手牌張數」，
+  // 摸牌/胡牌判定都由伺服器做完才通知，本地不做任何勝負判定，避免被竄改作弊。
+  // ============================================================
+  if (MP.enabled) {
+    document.getElementById('setup').style.display = 'none';
+    document.getElementById('game').style.display = 'block';
+    setStatus('連線中，等待遊戲開始…');
+
+    MP.socket = io();
+    MP.socket.emit('join_as_participant', { roomCode: MP.roomCode, playerToken: MP.myToken });
+
+    MP.socket.on('mahjong_game_start', (payload) => { mjInitMp(payload); });
+
+    MP.socket.on('mahjong_your_draw', ({ hand }) => {
+      const human = state.players.find(p => p.isHuman);
+      if (human) { human.hand = hand; human.handCount = hand.length; }
+      render();
+    });
+
+    MP.socket.on('mahjong_public_update', (pub) => {
+      if (!state) return;
+      state.wall.length = pub.wallCount;
+      state.currentIndex = pub.currentIndex;
+      state.players.forEach(p => {
+        if (!p.isHuman) p.handCount = pub.handCounts[p.token];
+      });
+      if (pub.discarded) {
+        state.discardLog.push({ tile: pub.discarded.tile, from: pub.discarded.fromName });
+        state.lastDiscard = { tile: pub.discarded.tile, fromName: pub.discarded.fromName };
+      }
+      renderSeats();
+      render();
+    });
+
+    MP.socket.on('mahjong_offer_self_win', () => {
+      setStatus('恭喜！你摸到胡牌了，按下「胡！」宣告勝利');
+      state.pendingChoice = { allowPass:false, kind:'selfwin' };
+      render();
+    });
+
+    MP.socket.on('mahjong_await_discard', () => {
+      setStatus('輪到你了，請點選要打出的牌');
+      state.awaitingHuman = true;
+      render();
+    });
+
+    MP.socket.on('mahjong_offer_hu', ({ tile, fromName }) => {
+      setStatus('你可以胡 '+fromName+' 打出的 '+tileLabel(tile)+'！要宣告勝利嗎？');
+      state.pendingChoice = { allowPass:true, kind:'hu' };
+      render();
+    });
+
+    MP.socket.on('mahjong_game_over', (payload) => {
+      state.awaitingHuman = false;
+      state.pendingChoice = null;
+      render();
+      const winnerObj = payload.winnerToken
+        ? { isHuman: payload.winnerToken === MP.myToken, name: payload.winnerName }
+        : null;
+      endGame(winnerObj, payload.mode, payload.loserName, payload.winTile);
+    });
+
+    document.getElementById('huBtn').onclick = () => {
+      if (!MP.enabled || !state.pendingChoice) return;
+      const kind = state.pendingChoice.kind;
+      state.pendingChoice = null; render();
+      if (kind === 'selfwin') MP.socket.emit('mahjong_confirm_self_win', { accept:true });
+      else MP.socket.emit('mahjong_hu_decision', { accept:true });
+    };
+    document.getElementById('passBtn').onclick = () => {
+      if (!MP.enabled || !state.pendingChoice) return;
+      state.pendingChoice = null; render();
+      MP.socket.emit('mahjong_hu_decision', { accept:false });
+    };
+  }
+
+  function mjInitMp(payload){
+    state = {
+      wall: { length: payload.wallCount },
+      players: payload.seatOrder.map((s,i)=>({
+        id:i, token:s.token, name: s.token===MP.myToken?'你':s.name,
+        avatar: AVATARS[i%AVATARS.length], isHuman: s.token===MP.myToken,
+        hand: s.token===MP.myToken ? payload.yourHand : null,
+        handCount: s.token===MP.myToken ? payload.yourHand.length : 13,
+      })),
+      currentIndex: payload.currentIndex,
+      discardLog: [], lastDiscard:null, awaitingHuman:false, resolveDiscard:null, pendingChoice:null,
+    };
+    renderSeats();
+    render();
+    setStatus('遊戲開始！洗牌完成，準備第一位玩家摸牌...');
+  }
+
+  // ---------- mahjong core ----------
+  function buildWall(){
+    const wall = [];
+    let id=0;
+    ['dot','bam','chr'].forEach(suit=>{
+      for(let num=1;num<=9;num++){
+        for(let k=0;k<4;k++){
+          wall.push({id:id++, suit, num});
+        }
+      }
+    });
+    for(let i=wall.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [wall[i],wall[j]]=[wall[j],wall[i]];
+    }
+    return wall;
+  }
+
+  function sortHand(hand){
+    const order = {dot:0,bam:1,chr:2};
+    return hand.slice().sort((a,b)=> order[a.suit]-order[b.suit] || a.num-b.num);
+  }
+
+  function toCounts(tiles){
+    const counts = {dot:new Array(9).fill(0), bam:new Array(9).fill(0), chr:new Array(9).fill(0)};
+    tiles.forEach(t=> counts[t.suit][t.num-1]++ );
+    return counts;
+  }
+
+  function canFormMelds(counts){
+    for(const suit of ['dot','bam','chr']){
+      for(let i=0;i<9;i++){
+        if(counts[suit][i] > 0){
+          const num = i+1;
+          if(counts[suit][i] >= 3){
+            counts[suit][i] -= 3;
+            if(canFormMelds(counts)){ counts[suit][i]+=3; return true; }
+            counts[suit][i] += 3;
+          }
+          if(num<=7 && counts[suit][i+1]>0 && counts[suit][i+2]>0){
+            counts[suit][i]--; counts[suit][i+1]--; counts[suit][i+2]--;
+            if(canFormMelds(counts)){ counts[suit][i]++; counts[suit][i+1]++; counts[suit][i+2]++; return true; }
+            counts[suit][i]++; counts[suit][i+1]++; counts[suit][i+2]++;
+          }
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  function isWinningHand(tiles){
+    if(tiles.length !== 14) return false;
+    const base = toCounts(tiles);
+    for(const suit of ['dot','bam','chr']){
+      for(let i=0;i<9;i++){
+        if(base[suit][i] >= 2){
+          base[suit][i] -= 2;
+          const ok = canFormMelds(JSON.parse(JSON.stringify(base)));
+          base[suit][i] += 2;
+          if(ok) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function tenpaiWaits(hand13){
+    const waits = [];
+    for(const suit of ['dot','bam','chr']){
+      for(let num=1; num<=9; num++){
+        const candidate = {suit, num};
+        if(isWinningHand([...hand13, candidate])) waits.push(candidate);
+      }
+    }
+    return waits;
+  }
+
+  // ---------- game state ----------
+  let state = null;
+
+  function initGame(){
+    const wall = buildWall();
+    const names = ['你','阿福','小綠','阿旺'];
+    const avatars = [AVATARS[chosenAvatar]];
+    const pool = AVATARS.filter((_,i)=>i!==chosenAvatar);
+    for(let i=1;i<playerCount;i++) avatars.push(pool[(i-1)%pool.length]);
+
+    const players = [];
+    for(let i=0;i<playerCount;i++){
+      const hand = wall.splice(0,13);
+      players.push({
+        id:i, name: i===0? '你' : names[i], avatar: avatars[i],
+        isHuman: i===0, hand
+      });
+    }
+    state = {
+      wall, players, currentIndex:0, discardLog:[], awaitingHuman:false,
+      resolveDiscard:null, waitingHuTile:null, lastDiscard:null,
+      pendingChoice:null // {resolve} for hu/pass confirm
+    };
+    renderSeats();
+    render();
+    setStatus('遊戲開始！洗牌完成，準備第一位玩家摸牌...');
+    setTimeout(runTurnLoop, 700);
+  }
+
+  function setStatus(msg){ document.getElementById('statusMsg').textContent = msg; }
+
+  function renderSeats(){
+    const wrap = document.getElementById('tableWrap');
+    [...wrap.querySelectorAll('.seat')].forEach(s=>s.remove());
+    const positions = ['seat-bottom','seat-left','seat-top','seat-right'];
+    state.players.forEach((p,i)=>{
+      const posClass = positions[i % positions.length];
+      const div = document.createElement('div');
+      div.className = 'seat '+posClass;
+      div.id = 'seat-'+p.id;
+      div.innerHTML = `
+        <div class="seat-badge">
+          <div class="seat-avatar">${p.avatar}</div>
+          <div>
+            <div class="seat-name">${p.name}</div>
+            <div class="seat-count">${p.isHuman? '' : '手牌 '+(p.hand? p.hand.length : p.handCount)}</div>
+          </div>
+        </div>`;
+      wrap.appendChild(div);
+    });
+  }
+
+  function tileLabel(t){
+    if(t.suit==='chr') return CN_NUM[t.num]+'萬';
+    if(t.suit==='dot') return t.num+'筒';
+    return t.num+'條';
+  }
+
+  function tileHTML(t){
+    const label = t.suit==='chr' ? CN_NUM[t.num]+'萬' : t.num;
+    const sub = t.suit==='dot' ? '筒' : (t.suit==='bam' ? '條' : '');
+    return `<div class="num">${label}</div>
+            ${sub? `<div class="sub">${sub}</div>` : ''}`;
+  }
+
+  function render(){
+    document.getElementById('wallCount').textContent = '牌堆：'+state.wall.length;
+    state.players.forEach(p=>{
+      const seat = document.getElementById('seat-'+p.id);
+      if(seat){
+        seat.classList.toggle('active', p.id === state.currentIndex);
+        const countEl = seat.querySelector('.seat-count');
+        if(countEl) countEl.textContent = p.isHuman ? '' : '手牌 '+(p.hand? p.hand.length : p.handCount);
+      }
+    });
+
+    // center: last discard, big + labeled
+    const box = document.getElementById('lastDiscardBox');
+    if(state.lastDiscard){
+      const info = SUIT_INFO[state.lastDiscard.tile.suit];
+      const div = document.createElement('div');
+      box.innerHTML = `<div class="last-discard-label">${state.lastDiscard.fromName} 打出了 ${tileLabel(state.lastDiscard.tile)}</div>`;
+      const tileDiv = document.createElement('div');
+      tileDiv.className = 'tile big '+info.cls;
+      tileDiv.innerHTML = tileHTML(state.lastDiscard.tile);
+      box.appendChild(tileDiv);
+    } else {
+      box.innerHTML = '';
+    }
+
+    const log = document.getElementById('discardLog');
+    log.innerHTML = state.discardLog.slice(-10).map(d=>{
+      return `<div class="mini-tile" title="${d.from}">${tileLabel(d.tile)}</div>`;
+    }).join('');
+
+    // human hand
+    const human = state.players.find(p=>p.isHuman);
+    const handArea = document.getElementById('handArea');
+    handArea.innerHTML = '';
+    const sorted = sortHand(human.hand);
+    sorted.forEach(t=>{
+      const div = document.createElement('div');
+      div.className = 'tile '+SUIT_INFO[t.suit].cls + (state.awaitingHuman? '' : ' disabled');
+      div.innerHTML = tileHTML(t);
+      div.onclick = ()=>{
+        if(!state.awaitingHuman) return;
+        if (MP.enabled) {
+          state.awaitingHuman = false;
+          MP.socket.emit('mahjong_discard', { tileId: t.id });
+          render();
+        } else if (state.resolveDiscard) {
+          state.awaitingHuman = false;
+          const r = state.resolveDiscard;
+          state.resolveDiscard = null;
+          r(t);
+        }
+      };
+      handArea.appendChild(div);
+    });
+
+    document.getElementById('huBtn').style.display = state.pendingChoice ? 'inline-block' : 'none';
+    document.getElementById('passBtn').style.display = (state.pendingChoice && state.pendingChoice.allowPass) ? 'inline-block' : 'none';
+
+    // tenpai info (only meaningful when human hand has 13 tiles, i.e. waiting for a draw)
+    const tp = document.getElementById('tenpaiInfo');
+    if(human.hand.length === 13 && !state.awaitingHuman){
+      const waits = tenpaiWaits(human.hand);
+      if(waits.length){
+        const uniq = [];
+        const seen = new Set();
+        waits.forEach(w=>{ const k=w.suit+w.num; if(!seen.has(k)){ seen.add(k); uniq.push(w);} });
+        tp.textContent = '🀄 你已聽牌！等：' + uniq.map(tileLabel).join('、');
+      } else {
+        tp.textContent = '';
+      }
+    } else {
+      tp.textContent = '';
+    }
+  }
+
+  function delay(ms){ return new Promise(res=>setTimeout(res,ms)); }
+
+  function aiChooseDiscard(hand){
+    const counts = toCounts(hand);
+    function usefulness(t){
+      const c = counts[t.suit];
+      const i = t.num-1;
+      let score = (c[i]-1)*4;
+      for(let d=1; d<=2; d++){
+        if(i-d>=0) score += c[i-d]>0 ? (3-d) : 0;
+        if(i+d<=8) score += c[i+d]>0 ? (3-d) : 0;
+      }
+      return score;
+    }
+    let worst = hand[0], worstScore = Infinity;
+    hand.forEach(t=>{
+      const s = usefulness(t);
+      if(s < worstScore){ worstScore = s; worst = t; }
+    });
+    return worst;
+  }
+
+  function removeTileById(hand, tileId){
+    const idx = hand.findIndex(t=>t.id===tileId);
+    if(idx>=0) return hand.splice(idx,1)[0];
+    return null;
+  }
+
+  function endGame(winner, mode, loserName, winTile){
+    document.getElementById('overlay').style.display='flex';
+    document.getElementById('restartBtn').style.display = MP.enabled ? 'none' : '';
+    document.getElementById('endEmoji').textContent = winner ? '🎉' : '🀫';
+    if(winner){
+      document.getElementById('endTitle').textContent = (winner.isHuman? '你贏了！' : winner.name+' 獲勝！');
+      document.getElementById('endSub').textContent = mode==='self'
+        ? (winner.isHuman? '恭喜自摸胡牌！一炮定生死，你是本局贏家～' : winner.name+' 自摸胡牌，下次再挑戰！')
+        : (winner.isHuman? '你胡了 '+loserName+' 打出的牌，漂亮！' : winner.name+' 胡了 '+loserName+' 打出的牌。');
+      const wrap = document.getElementById('winTileWrap');
+      wrap.innerHTML = '';
+      const label = document.createElement('div');
+      label.className = 'win-tile-label';
+      label.textContent = (mode==='self' ? '自摸胡牌張：' : '胡的那張牌：') + tileLabel(winTile);
+      const tileDiv = document.createElement('div');
+      tileDiv.className = 'tile big '+SUIT_INFO[winTile.suit].cls;
+      tileDiv.innerHTML = tileHTML(winTile);
+      wrap.appendChild(tileDiv);
+      wrap.appendChild(label);
+    } else {
+      document.getElementById('endTitle').textContent = '流局';
+      document.getElementById('endSub').textContent = '牌堆已摸完，沒有人胡牌，本局平手～';
+      document.getElementById('winTileWrap').innerHTML = '';
+    }
+  }
+
+  // ask human to confirm hu (or pass) — returns Promise<boolean>
+  function askHuman(allowPass, promptMsg){
+    setStatus(promptMsg);
+    state.pendingChoice = { allowPass };
+    render();
+    return new Promise(res=>{
+      document.getElementById('huBtn').onclick = ()=>{
+        state.pendingChoice = null;
+        res(true);
+      };
+      document.getElementById('passBtn').onclick = ()=>{
+        state.pendingChoice = null;
+        res(false);
+      };
+    });
+  }
+
+  async function runTurnLoop(){
+    while(true){
+      if(state.wall.length===0){ state.lastDiscard=null; render(); endGame(null,'draw'); return; }
+      const p = state.players[state.currentIndex];
+      setStatus((p.isHuman? '你' : p.name) + ' 摸牌中...');
+      const drawn = state.wall.pop();
+      p.hand.push(drawn);
+      render();
+      await delay(p.isHuman? 200 : 500);
+
+      const selfWin = isWinningHand(p.hand);
+      if(selfWin){
+        if(p.isHuman){
+          const confirmed = await askHuman(false, '恭喜！你摸到胡牌了，按下「胡！」宣告勝利');
+          render();
+          endGame(p,'self',null,drawn);
+          return;
+        } else {
+          setStatus(p.name+' 自摸胡牌！🎉');
+          await delay(600);
+          endGame(p,'self',null,drawn);
+          return;
+        }
+      }
+
+      // discard phase
+      let discardTile;
+      if(p.isHuman){
+        setStatus('輪到你了，請點選要打出的牌');
+        state.awaitingHuman = true;
+        render();
+        discardTile = await new Promise(res=>{ state.resolveDiscard = res; });
+      } else {
+        setStatus(p.name+' 思考中...');
+        await delay(600);
+        discardTile = aiChooseDiscard(p.hand);
+      }
+      removeTileById(p.hand, discardTile.id);
+      state.discardLog.push({tile:discardTile, from:p.name});
+      state.lastDiscard = {tile:discardTile, fromName:p.name};
+      render();
+      await delay(300);
+
+      // check others for hu on discard, in turn order after discarder
+      let winner = null;
+      for(let off=1; off<state.players.length; off++){
+        const idx = (state.currentIndex+off) % state.players.length;
+        const other = state.players[idx];
+        if(isWinningHand([...other.hand, discardTile])){
+          if(other.isHuman){
+            const take = await askHuman(true, '你可以胡 '+p.name+' 打出的 '+tileLabel(discardTile)+'！要宣告勝利嗎？');
+            render();
+            if(take){ winner = other; break; }
+            // else: declined, keep checking remaining candidates
+          } else {
+            winner = other; break;
+          }
+        }
+      }
+      if(winner){
+        render();
+        setStatus((winner.isHuman?'你':winner.name)+' 胡了 '+p.name+' 打出的牌！');
+        await delay(500);
+        endGame(winner, 'discard', p.name, discardTile);
+        return;
+      }
+
+      state.currentIndex = (state.currentIndex+1) % state.players.length;
+    }
+  }
+})();
+</script>
+</body>
+<script>
+(function(){
+  var bgm = document.getElementById('gameBgm');
+  var btn = document.getElementById('musicToggleBtn');
+  bgm.volume = 0.45;
+  var muted = false;
+  var started = false;
+  function startBgmOnce(){
+    if(started) return;
+    started = true;
+    bgm.play().catch(function(){ started = false; }); // 播放被擋的話下次互動再試一次
+  }
+  // 這幾款小遊戲多半是用 iframe 嵌入棋盤觸發的，不一定能保證有清楚的「開始」按鈕，
+  // 保險起見改成「這個畫面裡的第一個互動動作」就啟動背景音樂，涵蓋率最高
+  document.addEventListener('pointerdown', startBgmOnce, { once:true });
+  document.addEventListener('keydown', startBgmOnce, { once:true });
+  btn.addEventListener('click', function(){
+    muted = !muted;
+    bgm.muted = muted;
+    btn.textContent = muted ? '🔇' : '🔊';
+    if(!muted) bgm.play().catch(function(){});
+  });
+})();
+</script>
+</html>
