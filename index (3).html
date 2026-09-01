@@ -1,0 +1,3426 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Three.js 棋盤 + 真人角色 整合驗證</title>
+<style>
+  html,body{ margin:0; height:100%; overflow:hidden; background:#0f1115; font-family:"PingFang TC","Microsoft JhengHei",-apple-system,sans-serif; }
+  #canvasWrap{ position:absolute; inset:0; touch-action:none; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+  #canvasWrap canvas{ touch-action:none; }
+  #status{ position:absolute; bottom:70px; left:50%; transform:translateX(-50%); color:#e8e8e8; font-size:12px; background:rgba(0,0,0,0.4); padding:6px 14px; border-radius:20px; z-index:10; }
+  #progressBar{ position:absolute; bottom:0; left:0; height:3px; background:#e8985a; width:0%; z-index:10; transition:width 0.2s ease; }
+  #controls{ position:absolute; bottom:16px; left:50%; transform:translateX(-50%); display:flex; gap:8px; z-index:10; }
+  #controls button{ border:none; background:#fff; color:#20242b; font-size:24px; font-weight:700; padding:18px 32px; border-radius:16px; cursor:pointer; opacity:0.9; }
+  #controls button.active{ background:#e8985a; color:#fff; opacity:1; }
+  @media (max-width: 700px), (max-height: 500px){
+    #controls{ bottom:10px; gap:6px; }
+    #controls button{ font-size:13px; padding:9px 14px; border-radius:12px; }
+    #playerList{ transform:scale(0.82); transform-origin:top left; }
+    #turnBanner{ font-size:13px !important; padding:6px 12px !important; }
+    #poolBar{ font-size:12px !important; padding:5px 10px !important; }
+    #skillBtn{ font-size:12px !important; padding:6px 10px !important; }
+  }
+  #rotateHintOverlay{ display:none; }
+  @media (orientation: portrait) and (max-width: 900px){
+    #rotateHintOverlay.show{ display:flex; }
+  }
+  #rotateHintOverlay{
+    position:fixed; inset:0; z-index:9999; background:rgba(10,12,16,0.94);
+    flex-direction:column; align-items:center; justify-content:center; color:#fff;
+    text-align:center; padding:20px;
+  }
+  #rotateHintOverlay .icon{ font-size:56px; animation:rotateHintSpin 1.6s ease-in-out infinite; margin-bottom:16px; }
+  #rotateHintOverlay .title{ font-size:18px; font-weight:700; margin-bottom:8px; }
+  #rotateHintOverlay .sub{ font-size:13px; color:#aab0c0; margin-bottom:18px; }
+  #rotateHintOverlay button{
+    border:none; background:#e8985a; color:#fff; font-size:14px; font-weight:700;
+    padding:10px 22px; border-radius:12px; cursor:pointer;
+  }
+  @keyframes rotateHintSpin{
+    0%,100%{ transform:rotate(0deg); } 50%{ transform:rotate(90deg); }
+  }
+
+  #statBar{
+    position:absolute; top:14px; left:14px; z-index:10; color:#fff; font-size:12px;
+    background:rgba(0,0,0,0.45); padding:8px 14px; border-radius:12px; line-height:1.7;
+  }
+  #statBar b{ color:#ffd28a; }
+  #turnBanner{
+    position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:11;
+    color:#fff; font-size:16px; font-weight:700; background:rgba(0,0,0,0.55);
+    padding:9px 22px; border-radius:20px;
+  }
+  #poolBar{
+    position:absolute; top:60px; left:50%; transform:translateX(-50%); z-index:11;
+    color:#ffd28a; font-size:13px; font-weight:700; background:rgba(0,0,0,0.45);
+    padding:5px 16px; border-radius:16px;
+  }
+  #playerList{
+    position:absolute; top:70px; left:14px; z-index:10; display:flex; flex-direction:column; gap:6px;
+  }
+  .playerCard{
+    background:rgba(0,0,0,0.45); color:#fff; font-size:11px; padding:6px 10px; border-radius:10px;
+    border-left:4px solid #888; min-width:150px;
+  }
+  .playerCard.active{ border-left-color:#e8985a; background:rgba(232,152,90,0.25); }
+  #skillBtn{
+    position:absolute; top:14px; right:14px; z-index:10;
+    border:none; background:#7a5ce8; color:#fff; font-size:12px; font-weight:700;
+    padding:9px 14px; border-radius:12px; cursor:pointer; opacity:0.5;
+  }
+  #skillBtn.ready{ opacity:1; box-shadow:0 0 12px rgba(122,92,232,0.8); }
+
+  #modalOverlay{
+    position:absolute; inset:0; background:rgba(0,0,0,0.55); z-index:50;
+    display:none; align-items:center; justify-content:center;
+  }
+  #modalOverlay.show{ display:flex; }
+  #modalBox{
+    background:#20242f; border-radius:16px; padding:22px 24px; width:min(360px,86vw);
+    color:#fff; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,0.5);
+  }
+  #modalBox h3{ margin:0 0 8px; font-size:16px; }
+  #modalBox p{ margin:0 0 16px; font-size:13px; color:#b8c0cc; line-height:1.6; white-space:pre-line; text-align:left; }
+  #modalButtons{ display:flex; gap:10px; justify-content:center; }
+  #modalButtons button{
+    border:none; padding:10px 18px; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer;
+  }
+  .btnPrimary{ background:#e8985a; color:#fff; }
+  .btnSecondary{ background:#3a3f4d; color:#fff; }
+
+  #miniGameBar{
+    width:100%; height:34px; background:#111; border-radius:8px; position:relative; overflow:hidden; margin:10px 0 16px;
+  }
+  #miniGameZone{ position:absolute; top:0; bottom:0; background:rgba(232,152,90,0.5); }
+  #miniGameCursor{ position:absolute; top:0; bottom:0; width:4px; background:#fff; }
+
+  .floatText{
+    position:absolute; z-index:30; font-size:12px; font-weight:700; color:#fff;
+    background:rgba(0,0,0,0.55); padding:3px 8px; border-radius:8px; pointer-events:none;
+    transform:translate(-50%,-50%);
+  }
+
+  #titleOverlay{
+    position:absolute; inset:0; z-index:110;
+    background: radial-gradient(circle at 30% 20%, #ffe6c9, transparent 55%),
+                radial-gradient(circle at 75% 75%, #c9e8ff, transparent 55%),
+                linear-gradient(160deg, #fff6ea, #ffe0ec 60%, #e0f0ff);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    overflow:hidden;
+  }
+  #titleOverlay .decoStar{
+    position:absolute; font-size:30px; opacity:0.85; animation: floatStar 4.5s ease-in-out infinite;
+    filter:drop-shadow(0 2px 4px rgba(0,0,0,0.15));
+  }
+  #titleGlow{
+    position:absolute; top:50%; left:50%; width:640px; height:640px;
+    transform:translate(-50%,-50%);
+    background: radial-gradient(circle, rgba(255,200,220,0.55), rgba(255,220,180,0.25) 45%, transparent 70%);
+    filter:blur(10px);
+    animation: glowPulse 3.4s ease-in-out infinite;
+    pointer-events:none;
+  }
+  @keyframes glowPulse{
+    0%,100%{ opacity:0.7; transform:translate(-50%,-50%) scale(1); }
+    50%{ opacity:1; transform:translate(-50%,-50%) scale(1.08); }
+  }
+  @keyframes floatStar{
+    0%,100%{ transform:translateY(0) rotate(0deg); }
+    50%{ transform:translateY(-18px) rotate(15deg); }
+  }
+  #gameTitle{
+    font-size:clamp(36px, 8vw, 68px); font-weight:900; text-align:center; margin:0;
+    letter-spacing:4px;
+    background: linear-gradient(90deg, #ff8fab, #ffd27a, #8fd9c4, #8fb8ff, #d68fff, #ff8fab);
+    background-size:300% 100%;
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    animation: titleShift 5s linear infinite, titleBounce 2.2s ease-in-out infinite;
+    filter: drop-shadow(0 4px 10px rgba(0,0,0,0.12));
+  }
+  @keyframes titleShift{ to{ background-position:300% 0; } }
+  @keyframes titleBounce{
+    0%,100%{ transform:translateY(0) scale(1); }
+    50%{ transform:translateY(-8px) scale(1.03); }
+  }
+  #titleSub{
+    margin:10px 0 34px; font-size:15px; color:#8a6a5a; font-weight:600; text-align:center;
+  }
+  #enterGameBtn{
+    border:none; background:linear-gradient(135deg,#ff9a7a,#ff7ab0); color:#fff;
+    font-size:19px; font-weight:800; padding:16px 48px; border-radius:30px; cursor:pointer;
+    box-shadow:0 10px 24px rgba(255,122,176,0.45);
+    animation: btnPulse 1.7s ease-in-out infinite;
+  }
+  @keyframes btnPulse{
+    0%,100%{ transform:scale(1); }
+    50%{ transform:scale(1.05); }
+  }
+  #enterGameBtn:active{ transform:scale(0.95); }
+
+  #workModalOverlay{
+    position:absolute; inset:0; z-index:60; background:rgba(0,0,0,0.55);
+    display:none; align-items:center; justify-content:center;
+  }
+  #workModalOverlay.show{ display:flex; }
+  #workModalBox{
+    background:#20242f; border-radius:16px; padding:24px 26px; width:min(360px,86vw);
+    color:#fff; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,0.5);
+  }
+  #workModalBox h3{ margin:0 0 8px; font-size:17px; }
+  #workModalBox .workSub{ margin:0 0 18px; font-size:12px; color:#b8c0cc; }
+  #workDurationSlider{ width:100%; }
+  #workDurationLabel{ margin:10px 0 4px; font-size:20px; font-weight:800; color:#ffd28a; }
+  #workEstimateLine{ font-size:12px; color:#cdd; margin-bottom:18px; }
+  #workEstimateLine b{ color:#8fe0a8; }
+  #workModalButtons{ display:flex; gap:10px; justify-content:center; }
+  #workModalButtons button{ border:none; padding:10px 18px; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer; }
+
+  #lobbyOverlay{ display:none; }
+  #lobbyOverlay{
+    position:absolute; inset:0; z-index:100; background:rgba(10,12,16,0.92);
+    display:none; align-items:center; justify-content:center;
+  }
+  #lobbyOverlay.show{ display:flex; }
+  #lobbyBox{
+    background:#20242f; border-radius:18px; padding:28px 30px; width:min(460px,90vw);
+    color:#fff; box-shadow:0 12px 50px rgba(0,0,0,0.6);
+  }
+  #lobbyBox h2{ margin:0 0 4px; font-size:20px; text-align:center; }
+  #lobbyBox p.sub{ margin:0 0 20px; font-size:12px; color:#9aa3b5; text-align:center; }
+  .lobbySection{ margin-bottom:20px; }
+  .lobbySection h3{ margin:0 0 10px; font-size:13px; color:#ffd28a; }
+  .lobbyOptions{ display:flex; gap:10px; flex-wrap:wrap; }
+  .lobbyOptionCard{
+    flex:1; min-width:120px; background:#2a2f3d; border:2px solid transparent; border-radius:12px;
+    padding:14px 12px; cursor:pointer; text-align:center; transition:border-color 0.15s ease;
+  }
+  .lobbyOptionCard:hover{ border-color:#5a5f70; }
+  .lobbyOptionCard.selected{ border-color:#e8985a; background:rgba(232,152,90,0.15); }
+  .lobbyOptionCard .title{ font-size:14px; font-weight:700; margin-bottom:4px; }
+  .lobbyOptionCard .desc{ font-size:11px; color:#9aa3b5; line-height:1.5; }
+  #lobbyStartBtn{
+    width:100%; border:none; background:#e8985a; color:#fff; font-size:15px; font-weight:700;
+    padding:13px; border-radius:12px; cursor:pointer; margin-top:6px;
+  }
+  #lobbyStartBtn:disabled{ opacity:0.35; cursor:default; }
+  #lobbyNote{ font-size:10px; color:#7a8296; text-align:center; margin-top:10px; line-height:1.6; }
+  #eventBanner{
+    position:absolute; top:120px; left:50%; transform:translateX(-50%);
+    z-index:40; color:#fff; font-size:16px; font-weight:700; text-align:center;
+    background:rgba(20,20,25,0.85); padding:12px 22px; border-radius:14px;
+    border:2px solid #e8985a; box-shadow:0 8px 24px rgba(0,0,0,0.4);
+    opacity:0; transition:opacity 0.3s ease, transform 0.3s ease;
+    pointer-events:none; max-width:80vw;
+  }
+  #eventBanner.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  #mpLobbyOverlay{ display:none; }
+  #mpLobbyOverlay{
+    position:absolute; inset:0; z-index:100; background:rgba(10,12,16,0.92);
+    display:none; align-items:center; justify-content:center;
+  }
+  #mpLobbyOverlay.show{ display:flex; }
+  #mpLobbyOverlay input[type="text"]{
+    width:100%; box-sizing:border-box; padding:10px 12px; border-radius:10px; border:1.5px solid #454b5c;
+    background:#2a2f3d; color:#fff; font-size:14px; margin-top:6px;
+  }
+  .mpBtn{
+    flex:1; border:none; background:#3a3f4f; color:#fff; font-size:14px; font-weight:700;
+    padding:11px; border-radius:12px; cursor:pointer;
+  }
+  .mpBtn:hover{ filter:brightness(1.15); }
+  .mpBtn:disabled{ opacity:0.35; cursor:default; }
+  .mpBtnPrimary{ background:#e8985a; }
+  #mpConnStatus{ font-size:12px; color:#9aa3b5; margin-top:10px; min-height:16px; }
+  #mpPlayerListBox{ display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+  .mpPlayerRow{
+    display:flex; justify-content:space-between; align-items:center; background:#2a2f3d;
+    border-radius:8px; padding:8px 12px; font-size:13px;
+  }
+  .mpPlayerRow .tag{ font-size:10px; padding:2px 7px; border-radius:5px; background:#e8985a; color:#3a1e10; font-weight:700; }
+  #mpWaitingNote{ text-align:center; font-size:12px; color:#9aa3b5; margin-top:12px; }
+</style>
+</head>
+<body>
+
+<div id="status">解析角色資料中…</div>
+<div id="progressBar"></div>
+<div id="controls"></div>
+<div id="turnBanner"></div>
+<div id="poolBar"></div>
+<div id="playerList"></div>
+<div id="statBar" style="display:none;"></div>
+<button id="skillBtn">✨ 技能 0/10</button>
+<div id="modalOverlay">
+  <div id="modalBox">
+    <h3 id="modalTitle"></h3>
+    <p id="modalDesc"></p>
+    <div id="miniGameBar" style="display:none;">
+      <div id="miniGameZone"></div>
+      <div id="miniGameCursor"></div>
+    </div>
+    <div id="modalButtons"></div>
+  </div>
+</div>
+<div id="floatLayer"></div>
+<div id="eventBanner"></div>
+
+<div id="workModalOverlay">
+  <div id="workModalBox">
+    <h3>🏪 累死狗打工</h3>
+    <p class="workSub">選擇打工時間，1分鐘可賺 50 元</p>
+    <input type="range" id="workDurationSlider" min="5" max="240" value="30" step="5">
+    <div id="workDurationLabel">30 分鐘</div>
+    <div id="workEstimateLine">預計賺取 <b id="workMoneyEst">1500</b> 元　·　約可跳過 <b id="workTurnEst">-</b> 回合</div>
+    <div id="workModalButtons">
+      <button id="workCancelBtn" class="btnSecondary">取消</button>
+      <button id="workConfirmBtn" class="btnPrimary">確認上工</button>
+    </div>
+  </div>
+</div>
+
+<div id="canvasWrap"></div>
+
+<div id="rotateHintOverlay">
+  <div class="icon">📱</div>
+  <div class="title">建議將手機轉為橫向遊玩</div>
+  <div class="sub">棋盤畫面在橫向下比較完整、好操作</div>
+  <button id="rotateHintDismissBtn">我知道了，繼續直式玩</button>
+</div>
+
+<div id="titleOverlay">
+  <div id="titleGlow"></div>
+  <div class="decoStar" style="top:16%; left:32%; animation-delay:0s; font-size:34px;">⭐</div>
+  <div class="decoStar" style="top:14%; right:30%; animation-delay:0.8s;">✨</div>
+  <div class="decoStar" style="top:26%; left:22%; animation-delay:1.4s; font-size:36px;">🎲</div>
+  <div class="decoStar" style="top:24%; right:20%; animation-delay:0.4s; font-size:34px;">🏠</div>
+  <div class="decoStar" style="top:38%; left:16%; animation-delay:2s; font-size:38px;">💰</div>
+  <div class="decoStar" style="top:36%; right:15%; animation-delay:1.1s; font-size:32px;">🎉</div>
+  <div class="decoStar" style="top:58%; left:24%; animation-delay:0.6s;">🎩</div>
+  <div class="decoStar" style="top:60%; right:22%; animation-delay:1.7s; font-size:30px;">💎</div>
+  <div class="decoStar" style="top:70%; left:34%; animation-delay:1.2s; font-size:32px;">🎈</div>
+  <div class="decoStar" style="top:72%; right:33%; animation-delay:0.3s;">🎊</div>
+  <div class="decoStar" style="top:8%; left:44%; animation-delay:1.9s; font-size:26px;">👑</div>
+  <div class="decoStar" style="top:8%; right:42%; animation-delay:0.9s; font-size:26px;">🍀</div>
+  <div class="decoStar" style="top:50%; left:10%; animation-delay:1.5s; font-size:30px;">🎯</div>
+  <div class="decoStar" style="top:48%; right:9%; animation-delay:0.2s; font-size:30px;">🃏</div>
+  <div class="decoStar" style="top:82%; left:44%; animation-delay:1s; font-size:24px;">🐾</div>
+  <div class="decoStar" style="top:80%; right:44%; animation-delay:1.6s; font-size:24px;">🌟</div>
+  <h1 id="gameTitle">萌樂大富翁</h1>
+  <p id="titleSub">✨ Q版真人大富翁・奇幻樂園 ✨（遊戲名稱先暫定，之後可以改）</p>
+  <button id="enterGameBtn">🎮 進入遊戲</button>
+</div>
+
+<div id="lobbyOverlay">
+  <div id="lobbyBox">
+    <h2>🎮 遊戲設定</h2>
+    <p class="sub">選好之後按「開始遊戲」</p>
+
+    <div class="lobbySection">
+      <h3>勝負規則</h3>
+      <div class="lobbyOptions" id="ruleOptions">
+        <div class="lobbyOptionCard" data-value="bankruptcy">
+          <div class="title">💀 破產淘汰制</div>
+          <div class="desc">資金見底就淘汰<br>最後存活者獲勝</div>
+        </div>
+        <div class="lobbyOptionCard" data-value="turns">
+          <div class="title">🏁 回合積分制</div>
+          <div class="desc">玩滿 30 回合<br>比總資產（現金+地產）</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lobbySection">
+      <h3>對戰人數（AI對手）</h3>
+      <div class="lobbyOptions" id="aiCountOptions">
+        <div class="lobbyOptionCard" data-value="1">
+          <div class="title">1 vs 1</div>
+          <div class="desc">你 + 1 個AI</div>
+        </div>
+        <div class="lobbyOptionCard" data-value="2">
+          <div class="title">1 vs 2</div>
+          <div class="desc">你 + 2 個AI</div>
+        </div>
+        <div class="lobbyOptionCard" data-value="3">
+          <div class="title">1 vs 3</div>
+          <div class="desc">你 + 3 個AI</div>
+        </div>
+      </div>
+    </div>
+
+    <button id="lobbyStartBtn" disabled>開始遊戲</button>
+    <div id="lobbyNote">※ 目前為本機單裝置原型，「玩家對玩家」真人連線對戰需要之後接上線上連線功能</div>
+  </div>
+</div>
+
+<div id="mpLobbyOverlay">
+  <div id="lobbyBox">
+    <h2>🌐 連線多人遊戲</h2>
+    <p class="sub" id="mpSubText">先連上伺服器，建立或加入一個房間</p>
+
+    <div class="lobbySection" id="mpConnectSection">
+      <h3>伺服器網址</h3>
+      <input type="text" id="mpServerUrl" placeholder="https://your-server.onrender.com" value="https://monopoly-server-1-fwtn.onrender.com">
+      <h3 style="margin-top:14px;">你的暱稱</h3>
+      <input type="text" id="mpNameInput" placeholder="輸入暱稱" maxlength="12" value="玩家">
+      <div style="display:flex; gap:10px; margin-top:14px;">
+        <button id="mpCreateBtn" class="mpBtn mpBtnPrimary">🏠 建立新房間</button>
+        <button id="mpJoinBtn" class="mpBtn">🚪 加入房間</button>
+      </div>
+      <input type="text" id="mpJoinCodeInput" placeholder="輸入4位房間代碼" maxlength="4" style="display:none; margin-top:10px; text-transform:uppercase;">
+      <div id="mpConnStatus"></div>
+    </div>
+
+    <div class="lobbySection" id="mpRoomSection" style="display:none;">
+      <h3>房間代碼：<span id="mpRoomCodeDisplay" style="color:#e8985a; font-size:18px; letter-spacing:3px;"></span></h3>
+      <div id="mpPlayerListBox"></div>
+
+      <div id="mpCharSection" style="margin-top:16px;">
+        <h3>選擇你的角色</h3>
+        <div class="lobbyOptions" id="mpCharOptions">
+          <div class="lobbyOptionCard" data-value="char1">
+            <div class="title">👩‍🦰 長髮女生</div>
+            <div class="desc">標準速度<br>俐落靈巧，新手適用</div>
+          </div>
+          <div class="lobbyOptionCard" data-value="char2">
+            <div class="title">💪 肌肉猛男</div>
+            <div class="desc">力量型<br>虎虎生風，氣勢十足</div>
+          </div>
+          <div class="lobbyOptionCard" data-value="char3">
+            <div class="title">🐕 四足小狗</div>
+            <div class="desc">特殊骨架<br>四腳跑跳的萌系代表</div>
+          </div>
+          <div class="lobbyOptionCard" data-value="char4">
+            <div class="title">👙 泳裝女生</div>
+            <div class="desc">標準速度<br>活力十足，走路帶風</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="mpRuleSection" style="display:none; margin-top:16px;">
+        <h3>勝負規則</h3>
+        <div class="lobbyOptions" id="mpRuleOptions">
+          <div class="lobbyOptionCard selected" data-value="bankruptcy">
+            <div class="title">💀 破產淘汰制</div>
+            <div class="desc">資金見底就淘汰<br>最後存活者獲勝</div>
+          </div>
+          <div class="lobbyOptionCard" data-value="turns">
+            <div class="title">🏁 回合積分制</div>
+            <div class="desc">玩滿 30 回合<br>比總資產（現金+地產）</div>
+          </div>
+        </div>
+      </div>
+
+      <button id="mpStartBtn" class="mpBtn mpBtnPrimary" style="width:100%; margin-top:16px; display:none;" disabled>開始連線對戰（至少2人）</button>
+      <div id="mpWaitingNote" style="display:none;">等待房主開始遊戲…</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+(function(){
+  const statusEl = document.getElementById('status');
+  const progressEl = document.getElementById('progressBar');
+  const controlsEl = document.getElementById('controls');
+  function setStatus(msg){ statusEl.textContent = msg; }
+
+  // GLB_BASE64 已移除，改用角色選擇 + 外部檔案抓取（見下面的 CHAR_DATA / loadSelectedCharacterModel）
+
+  // ================= 沿用已驗證過的 glTF 解析器 =================
+  function base64ToArrayBuffer(base64){
+    const chunkSize = 1024*1024;
+    const totalLen = base64.length;
+    const bytes = new Uint8Array(Math.floor(totalLen*3/4));
+    let bytePos = 0;
+    for(let i=0;i<totalLen;i+=chunkSize){
+      const bin = atob(base64.slice(i,i+chunkSize));
+      for(let j=0;j<bin.length;j++){ bytes[bytePos++] = bin.charCodeAt(j); }
+      if(i % (chunkSize*8) === 0){ progressEl.style.width = Math.min(100, Math.round((i/totalLen)*35))+'%'; }
+    }
+    return bytes.slice(0,bytePos).buffer;
+  }
+
+  function parseGLB(arrayBuffer){
+    const dv = new DataView(arrayBuffer);
+    if(dv.getUint32(0,true) !== 0x46546C67) throw new Error('不是有效的 glb 檔案');
+    const length = dv.getUint32(8,true);
+    let offset = 12, json=null, bin=null;
+    while(offset < length){
+      const chunkLength = dv.getUint32(offset,true); offset+=4;
+      const chunkType = dv.getUint32(offset,true); offset+=4;
+      const chunkData = arrayBuffer.slice(offset, offset+chunkLength);
+      if(chunkType === 0x4E4F534A){ json = JSON.parse(new TextDecoder('utf-8').decode(chunkData)); }
+      else if(chunkType === 0x004E4942){ bin = chunkData; }
+      offset += chunkLength;
+    }
+    return {json, bin};
+  }
+
+  const COMPONENT_CTORS = { 5126: Float32Array, 5125: Uint32Array, 5123: Uint16Array, 5121: Uint8Array, 5120: Int8Array, 5122: Int16Array };
+  const TYPE_COMPONENTS = { SCALAR:1, VEC2:2, VEC3:3, VEC4:4, MAT3:9, MAT4:16 };
+
+  function getAccessorArray(json, binBuffer, accessorIdx){
+    const acc = json.accessors[accessorIdx];
+    const bv = json.bufferViews[acc.bufferView];
+    const byteOffset = (bv.byteOffset||0) + (acc.byteOffset||0);
+    const compCount = TYPE_COMPONENTS[acc.type];
+    const Ctor = COMPONENT_CTORS[acc.componentType];
+    return new Ctor(binBuffer, byteOffset, acc.count*compCount);
+  }
+
+  function getImageBlobUrl(json, binBuffer, imageIdx){
+    const img = json.images[imageIdx];
+    const bv = json.bufferViews[img.bufferView];
+    const bytes = new Uint8Array(binBuffer, bv.byteOffset||0, bv.byteLength);
+    return URL.createObjectURL(new Blob([bytes], {type: img.mimeType || 'image/png'}));
+  }
+
+  function buildMaterial(json, binBuffer, matIdx){
+    let matOpts = { color:0xcccccc, side: THREE.DoubleSide, roughness:0.85, metalness:0.12 };
+    if(matIdx === undefined || !json.materials || !json.materials[matIdx]) return new THREE.MeshStandardMaterial(matOpts);
+    const mat = json.materials[matIdx];
+    const loader = new THREE.TextureLoader();
+    matOpts = { side: THREE.DoubleSide, metalness:0.12, roughness:0.9 };
+    function texFrom(texRef, isColor){
+      if(!texRef || texRef.index === undefined) return null;
+      const texDef = json.textures[texRef.index];
+      const url = getImageBlobUrl(json, binBuffer, texDef.source);
+      const tex = loader.load(url);
+      tex.flipY = false;
+      if(isColor && 'encoding' in tex) tex.encoding = THREE.sRGBEncoding;
+      return tex;
+    }
+    try{
+      const pbr = mat.pbrMetallicRoughness || {};
+      const baseColorTex = texFrom(pbr.baseColorTexture, true);
+      const normalTex = texFrom(mat.normalTexture, false);
+      const mrTex = texFrom(pbr.metallicRoughnessTexture, false);
+      const emissiveTex = texFrom(mat.emissiveTexture, true);
+      if(baseColorTex) matOpts.map = baseColorTex;
+      if(normalTex) matOpts.normalMap = normalTex;
+      if(mrTex){ matOpts.roughnessMap = mrTex; matOpts.roughness = 1; }
+      if(emissiveTex){ matOpts.emissiveMap = emissiveTex; matOpts.emissive = new THREE.Color(1,1,1); }
+    }catch(err){ console.warn('材質載入失敗，改用預設材質', err); }
+    return new THREE.MeshStandardMaterial(matOpts);
+  }
+
+  function buildSceneFromGLTF(json, bin){
+    const nodeObjects = {};
+    const skin = (json.skins && json.skins[0]) || null;
+    const jointSet = new Set(skin ? skin.joints : []);
+
+    function buildNode(idx){
+      const def = json.nodes[idx];
+      const obj = jointSet.has(idx) ? new THREE.Bone() : new THREE.Object3D();
+      obj.name = def.name || ('node_'+idx);
+      if(def.translation) obj.position.fromArray(def.translation);
+      if(def.rotation) obj.quaternion.fromArray(def.rotation);
+      if(def.scale) obj.scale.fromArray(def.scale);
+      if(def.matrix){
+        const m = new THREE.Matrix4().fromArray(def.matrix);
+        m.decompose(obj.position, obj.quaternion, obj.scale);
+      }
+      nodeObjects[idx] = obj;
+      (def.children||[]).forEach(ci=>{ obj.add(buildNode(ci)); });
+      return obj;
+    }
+
+    const rootNodeIdx = json.scenes[json.scene||0].nodes[0];
+    const rootObj = buildNode(rootNodeIdx);
+    const rootOriginalScale = rootObj.scale.clone();
+    rootObj.scale.set(1,1,1);
+    rootObj.updateMatrixWorld(true);
+    let skinDiagOuter = null;
+
+    for(let idx=0; idx<json.nodes.length; idx++){
+      const def = json.nodes[idx];
+      if(def.mesh === undefined) continue;
+      const meshDef = json.meshes[def.mesh];
+      const prim = meshDef.primitives[0];
+      const attrs = prim.attributes;
+
+      const geometry = new THREE.BufferGeometry();
+      if(attrs.POSITION!==undefined) geometry.setAttribute('position', new THREE.BufferAttribute(getAccessorArray(json,bin,attrs.POSITION).slice(),3));
+      if(attrs.NORMAL!==undefined) geometry.setAttribute('normal', new THREE.BufferAttribute(getAccessorArray(json,bin,attrs.NORMAL).slice(),3));
+      if(attrs.TEXCOORD_0!==undefined) geometry.setAttribute('uv', new THREE.BufferAttribute(getAccessorArray(json,bin,attrs.TEXCOORD_0).slice(),2));
+      if(prim.indices!==undefined) geometry.setIndex(new THREE.BufferAttribute(getAccessorArray(json,bin,prim.indices).slice(),1));
+
+      const material = buildMaterial(json, bin, prim.material);
+      let finalMesh;
+      const isSkinned = (def.skin !== undefined && attrs.JOINTS_0!==undefined && attrs.WEIGHTS_0!==undefined);
+
+      if(isSkinned){
+        const skinIndexArr = getAccessorArray(json,bin,attrs.JOINTS_0).slice();
+        const skinWeightArr = getAccessorArray(json,bin,attrs.WEIGHTS_0).slice();
+        geometry.setAttribute('skinIndex', new THREE.BufferAttribute(skinIndexArr,4));
+        geometry.setAttribute('skinWeight', new THREE.BufferAttribute(skinWeightArr,4));
+        material.skinning = true;
+        finalMesh = new THREE.SkinnedMesh(geometry, material);
+      } else {
+        finalMesh = new THREE.Mesh(geometry, material);
+      }
+
+      const placeholder = nodeObjects[idx];
+      finalMesh.name = placeholder.name;
+      finalMesh.position.copy(placeholder.position);
+      finalMesh.quaternion.copy(placeholder.quaternion);
+      finalMesh.scale.copy(placeholder.scale);
+      const parent = placeholder.parent;
+      if(parent){ parent.remove(placeholder); parent.add(finalMesh); }
+      nodeObjects[idx] = finalMesh;
+
+      if(isSkinned){
+        rootObj.updateMatrixWorld(true);
+        const skinDef = json.skins[def.skin];
+        const invArr = getAccessorArray(json,bin, skinDef.inverseBindMatrices);
+        const boneInverses = [];
+        for(let i=0;i<skinDef.joints.length;i++){
+          boneInverses.push(new THREE.Matrix4().fromArray(invArr, i*16));
+        }
+        const bones = skinDef.joints.map(j=>nodeObjects[j]);
+        const skeleton = new THREE.Skeleton(bones, boneInverses);
+        finalMesh.bind(skeleton, new THREE.Matrix4());
+      }
+    }
+
+    const animClips = [];
+    (json.animations||[]).forEach(animDef=>{
+      const tracks = [];
+      let maxTime = 0;
+      animDef.channels.forEach(ch=>{
+        const sampler = animDef.samplers[ch.sampler];
+        const targetObj = nodeObjects[ch.target.node];
+        if(!targetObj || !(ch.target.path==='translation'||ch.target.path==='rotation'||ch.target.path==='scale')) return;
+        const times = getAccessorArray(json,bin, sampler.input).slice();
+        const values = getAccessorArray(json,bin, sampler.output).slice();
+        if(times.length) maxTime = Math.max(maxTime, times[times.length-1]);
+        tracks.push({ boneObj: targetObj, path: ch.target.path, itemSize: ch.target.path==='rotation'?4:3, isQuat: ch.target.path==='rotation', times, values });
+      });
+      animClips.push({ name: animDef.name || ('clip_'+animClips.length), duration: maxTime, tracks });
+    });
+
+    const bindPose = {};
+    Object.keys(nodeObjects).forEach(idx=>{
+      const o = nodeObjects[idx];
+      if(o.isBone){ bindPose[idx] = { pos:o.position.clone(), quat:o.quaternion.clone(), scale:o.scale.clone() }; }
+    });
+
+    rootObj.scale.copy(rootOriginalScale);
+    return { rootObj, clips: animClips, bindPose, nodeObjects };
+  }
+
+  function lerpArr(a,b,alpha,size){ const out=new Array(size); for(let k=0;k<size;k++) out[k]=a[k]+(b[k]-a[k])*alpha; return out; }
+  const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
+  function sampleTrack(times, values, itemSize, t, isQuat){
+    const n = times.length;
+    if(n===0) return null;
+    if(n===1 || t<=times[0]) return Array.from(values.slice(0,itemSize));
+    if(t>=times[n-1]) return Array.from(values.slice((n-1)*itemSize, n*itemSize));
+    let i=0; while(i<n-1 && !(t>=times[i] && t<=times[i+1])) i++;
+    const t0=times[i], t1=times[i+1];
+    const alpha=(t1>t0)?(t-t0)/(t1-t0):0;
+    const a=values.slice(i*itemSize,(i+1)*itemSize);
+    const b=values.slice((i+1)*itemSize,(i+2)*itemSize);
+    if(isQuat){ _qa.set(a[0],a[1],a[2],a[3]); _qb.set(b[0],b[1],b[2],b[3]); _qa.slerp(_qb, alpha); return [_qa.x,_qa.y,_qa.z,_qa.w]; }
+    return lerpArr(a,b,alpha,itemSize);
+  }
+  function applyClipAtTime(clip, t){
+    const dur = clip.duration;
+    const tt = dur>0 ? (t % dur) : 0;
+    clip.tracks.forEach(tr=>{
+      const val = sampleTrack(tr.times, tr.values, tr.itemSize, tt, tr.isQuat);
+      if(!val) return;
+      if(tr.path==='translation') tr.boneObj.position.set(val[0],val[1],val[2]);
+      else if(tr.path==='rotation') tr.boneObj.quaternion.set(val[0],val[1],val[2],val[3]);
+      else if(tr.path==='scale') tr.boneObj.scale.set(val[0],val[1],val[2]);
+    });
+  }
+  // ================= 解析器結束 =================
+
+  // ---- Three.js 場景 ----
+  const wrap = document.getElementById('canvasWrap');
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a2e22);
+  scene.fog = new THREE.Fog(0x1a2e22, 20, 60);
+
+  const camera = new THREE.PerspectiveCamera(40, window.innerWidth/window.innerHeight, 0.05, 500);
+  const renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  if('outputEncoding' in renderer) renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.shadowMap.enabled = true;
+  wrap.appendChild(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+  scene.add(new THREE.HemisphereLight(0xdfe9ff, 0x223322, 0.4));
+  const sun = new THREE.DirectionalLight(0xfff4e0, 1.0);
+  sun.position.set(6,10,6);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024,1024);
+  sun.shadow.camera.left=-10; sun.shadow.camera.right=10; sun.shadow.camera.top=10; sun.shadow.camera.bottom=-10;
+  scene.add(sun);
+
+  // ---- 棋盤格資料（地產/事件/角落格類型） ----
+  const TILE = 1.6;
+  const SIDE_STEPS = 10; // 每邊10步（含起點角落，不含終點角落，避免角落重複計算）
+  const TOTAL_TILES = SIDE_STEPS * 4; // = 40
+
+  const GROUP_COLOR = { A:0xd9534f, B:0x4f8ad9, C:0xd9b64f, D:0x4fbf7d };
+  const GROUP_NAME  = { A:'紅磚區', B:'海灣區', C:'黃金區', D:'翠林區' };
+  // 每側(9格)的類型排列：7地產 + 1機會命運 + 1稅金
+  const SIDE_PATTERN = ['property','property','chest','property','property','tax','property','property','property'];
+
+  function buildTileData(){
+    const data = new Array(TOTAL_TILES);
+    const sideGroups = ['A','B','C','D'];
+    const cornerInfo = {
+      0:{type:'go', name:'起點 GO'},
+      10:{type:'jail', name:'監獄（過路）'},
+      20:{type:'free_parking', name:'免費停車'},
+      30:{type:'goto_jail', name:'入獄 GoToJail'}
+    };
+    let propCounter = 0;
+    for(let i=0;i<TOTAL_TILES;i++){
+      if(cornerInfo[i]){
+        data[i] = { index:i, isCorner:true, ...cornerInfo[i] };
+        continue;
+      }
+      const sideIdx = Math.floor(i/SIDE_STEPS);
+      const offset = i % SIDE_STEPS; // 1~9
+      const group = sideGroups[sideIdx];
+      const kind = SIDE_PATTERN[offset-1];
+      if(kind === 'property'){
+        propCounter++;
+        const price = 800 + i*90;
+        data[i] = {
+          index:i, isCorner:false, type:'property', group,
+          name: GROUP_NAME[group]+' '+propCounter+'號地',
+          price, baseRent: Math.round(price*0.14),
+          owner:null,
+          building:{ level:0, buildStartTime:null, buildDuration:null }
+        };
+      } else if(kind === 'chest'){
+        data[i] = { index:i, isCorner:false, type:'chest', name:'機會/命運', group };
+      } else {
+        data[i] = { index:i, isCorner:false, type:'tax', name:'稅金', amount: 400 + sideIdx*100, group };
+      }
+    }
+    return data;
+  }
+  const TILE_DATA = buildTileData();
+
+  const tileGroup = new THREE.Group();
+  scene.add(tileGroup);
+  const tilePositions = [];
+  const tileMeshes = [];
+
+  function loopIndexToGridXY(i){
+    const half = SIDE_STEPS;
+    if(i < half)        return { gx: i,        gy: 0 };            // 下邊：左→右
+    if(i < half*2)      return { gx: half,      gy: i-half };       // 右邊：下→上
+    if(i < half*3)      return { gx: half-(i-half*2), gy: half };   // 上邊：右→左
+    return { gx: 0,      gy: half-(i-half*3) };                     // 左邊：上→下
+  }
+
+  function colorForTile(td){
+    if(td.isCorner) return 0xe8985a;
+    if(td.type === 'property') return GROUP_COLOR[td.group];
+    if(td.type === 'tax') return 0x8a8f99;
+    if(td.type === 'chest') return 0x9a7fe0;
+    return 0x6fae8c;
+  }
+
+  const CORNER_LABEL = { go:'起點\nGO', jail:'監獄\n(過路)', free_parking:'免費\n停車', goto_jail:'入獄' };
+  function labelForTile(td){
+    if(td.isCorner) return CORNER_LABEL[td.type] || td.name;
+    if(td.type==='property') return td.name;
+    if(td.type==='tax') return '稅金\n-'+td.amount;
+    if(td.type==='chest') return '機會\n命運';
+    return td.name;
+  }
+
+  function createTileLabelSprite(text){
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,256,256);
+    ctx.fillStyle = '#1a1a1a';
+    ctx.font = 'bold 40px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const lines = text.split('\n');
+    const lineHeight = 46;
+    const startY = 128 - (lines.length-1)*lineHeight/2;
+    lines.forEach((line,i)=>{
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 6;
+      ctx.strokeText(line, 128, startY + i*lineHeight);
+      ctx.fillText(line, 128, startY + i*lineHeight);
+    });
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.anisotropy = 4;
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent:true, depthWrite:false });
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(1,1), mat);
+    plane.rotation.x = -Math.PI/2; // 躺平，貼在格子表面朝上
+    // 外層包一層群組：方向角度改套用在群組上，跟面自身的躺平旋轉分開算，
+    // 避免同一物件疊加兩個軸的旋轉時（Three.js預設歐拉角順序）算錯把面轉成直立
+    const group = new THREE.Group();
+    group.add(plane);
+    return group;
+  }
+
+  // 依格子所在的棋盤邊，算出文字要轉多少角度才會「朝向棋盤中心（朝內）」正向顯示
+  // （棋盤四邊分別朝 -Z / +X / +Z / -X 方向朝外，文字朝內＝跟外朝方向相反）
+  function inwardAngleForIndex(i){
+    const side = Math.floor(i / SIDE_STEPS) % 4;
+    const angles = [Math.PI, Math.PI/2, 0, -Math.PI/2];
+    return angles[side];
+  }
+
+  const tileLabelSprites = [];
+  const ownerRings = [];
+
+  for(let i=0; i<TOTAL_TILES; i++){
+    const { gx, gy } = loopIndexToGridXY(i);
+    const x = (gx - SIDE_STEPS/2) * TILE;
+    const z = (gy - SIDE_STEPS/2) * TILE;
+    const td = TILE_DATA[i];
+    const isCorner = td.isCorner;
+    const size = isCorner ? TILE*1.35 : TILE*0.92;
+    const geo = new THREE.BoxGeometry(size, isCorner?0.16:0.12, size);
+    const mat = new THREE.MeshStandardMaterial({ color: colorForTile(td), roughness:0.9 });
+    const tile = new THREE.Mesh(geo, mat);
+    tile.position.set(x, isCorner? -0.08 : -0.06, z);
+    tile.receiveShadow = true;
+    tileGroup.add(tile);
+    tilePositions.push({x, z, index:i, isCorner});
+    tileMeshes.push(tile);
+
+    // 文字標籤：貼在格子表面上（躺平，並依所在邊朝向棋盤中心正向顯示）
+    const label = createTileLabelSprite(labelForTile(td));
+    label.scale.set(size*0.9, size*0.9, 1);
+    label.position.set(x, 0.001, z);
+    label.rotation.y = inwardAngleForIndex(i);
+    tileGroup.add(label);
+    tileLabelSprites.push(label);
+
+    // 擁有者標示環：買下地產後才顯示
+    if(td.type==='property'){
+      const ringGeo = new THREE.RingGeometry(size*0.42, size*0.5, 24);
+      const ringMat = new THREE.MeshBasicMaterial({ color:0xffe27a, side:THREE.DoubleSide, transparent:true, opacity:0.95 });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI/2;
+      ring.position.set(x, 0.02, z);
+      ring.visible = false;
+      tileGroup.add(ring);
+      ownerRings[i] = ring;
+    }
+  }
+
+  function markPropertyOwned(index, colorHex){
+    if(ownerRings[index]){
+      ownerRings[index].visible = true;
+      if(colorHex!=null) ownerRings[index].material.color.setHex(colorHex);
+    }
+  }
+  function refreshTileLabel(index){
+    const old = tileLabelSprites[index];
+    if(old){ tileGroup.remove(old); }
+    const td = TILE_DATA[index];
+    let text = labelForTile(td);
+    if(td.type==='property' && td.owner!==null){
+      const ownerP = PLAYERS.find(pl=>pl.id===td.owner);
+      text += '\n★'+(ownerP ? ownerP.name : '')+'的地';
+    }
+    const label = createTileLabelSprite(text);
+    const size = td.isCorner ? TILE*1.35 : TILE*0.92;
+    label.scale.set(size*0.9, size*0.9, 1);
+    label.position.set(tilePositions[index].x, 0.001, tilePositions[index].z);
+    label.rotation.y = inwardAngleForIndex(index);
+    tileGroup.add(label);
+    tileLabelSprites[index] = label;
+  }
+
+  // 棋盤中央鋪一塊底板，視覺上更完整
+  const centerSize = (SIDE_STEPS)*TILE*0.94;
+  const centerGeo = new THREE.PlaneGeometry(centerSize, centerSize);
+  const centerMat = new THREE.MeshStandardMaterial({ color:0x2f6b4f, roughness:1 });
+  const centerPlane = new THREE.Mesh(centerGeo, centerMat);
+  centerPlane.rotation.x = -Math.PI/2;
+  centerPlane.position.y = -0.09;
+  centerPlane.receiveShadow = true;
+  scene.add(centerPlane);
+
+  // ---- 中央打工商店：「累死狗－要死也是你的狗」便利商店（先做視覺，打工邏輯後續再接） ----
+  function makeStoreSignTexture(){
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    // 底色：暖橘漸層招牌
+    const grad = ctx.createLinearGradient(0,0,0,256);
+    grad.addColorStop(0, '#ff9d5c');
+    grad.addColorStop(1, '#ff7a3d');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,512,256);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 10;
+    ctx.strokeRect(8,8,496,240);
+    // 店名
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 76px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = 6;
+    ctx.fillText('累死狗', 256, 96);
+    // 標語
+    ctx.shadowBlur = 2;
+    ctx.font = 'bold 34px sans-serif';
+    ctx.fillStyle = '#fff3e0';
+    ctx.fillText('要死也是你的狗', 256, 168);
+    // 爪印小圖示
+    ctx.shadowBlur = 0;
+    ctx.font = '40px sans-serif';
+    ctx.fillText('🐾', 440, 40);
+    ctx.fillText('🐾', 72, 40);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.anisotropy = 4;
+    return tex;
+  }
+
+  function makeRoofTopTexture(){
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,512,512);
+    ctx.save();
+    ctx.translate(256,256);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // 主標「累死狗」：橘色字＋白色描邊＋陰影，放大2倍
+    ctx.font = 'bold 116px sans-serif';
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 14;
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = '#ffffff';
+    ctx.strokeText('累死狗', 0, -48);
+    ctx.fillStyle = '#ff8a3d';
+    ctx.fillText('累死狗', 0, -48);
+    // 副標「便利商店」：白底綠字
+    ctx.shadowBlur = 6;
+    ctx.font = 'bold 60px sans-serif';
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = '#ffffff';
+    ctx.strokeText('便利商店', 0, 60);
+    ctx.fillStyle = '#2f8f5f';
+    ctx.fillText('便利商店', 0, 60);
+    ctx.restore();
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.anisotropy = 4;
+    return tex;
+  }
+
+  function buildConvenienceStore(){
+    const store = new THREE.Group();
+    const WALL_H = 2.3; // 牆面加高（原本1.5太矮，招牌貼著屋頂邊緣容易被擋到）
+
+    // 主體牆面（暖米色）
+    const wallGeo = new THREE.BoxGeometry(2.6, WALL_H, 2.0);
+    const wallMat = new THREE.MeshStandardMaterial({ color:0xfff3e0, roughness:0.85 });
+    const wall = new THREE.Mesh(wallGeo, wallMat);
+    wall.position.y = WALL_H/2;
+    wall.castShadow = true; wall.receiveShadow = true;
+    store.add(wall);
+
+    // 屋頂（青綠色平頂+邊緣，Q版可愛感）
+    const roofGeo = new THREE.BoxGeometry(2.9, 0.18, 2.3);
+    const roofMat = new THREE.MeshStandardMaterial({ color:0x3fae7d, roughness:0.6 });
+    const roof = new THREE.Mesh(roofGeo, roofMat);
+    roof.position.y = WALL_H + 0.09;
+    roof.castShadow = true;
+    store.add(roof);
+    // 屋頂上緣裝飾條
+    const roofTrimGeo = new THREE.BoxGeometry(2.95, 0.06, 2.35);
+    const roofTrimMat = new THREE.MeshStandardMaterial({ color:0xffffff, roughness:0.5 });
+    const roofTrim = new THREE.Mesh(roofTrimGeo, roofTrimMat);
+    roofTrim.position.y = WALL_H + 0.21;
+    store.add(roofTrim);
+
+    // 屋頂正上方店名（躺平朝上，從高處往下看也能看到）
+    const roofTopGeo = new THREE.PlaneGeometry(2.6, 2.0);
+    const roofTopMat = new THREE.MeshBasicMaterial({ map: makeRoofTopTexture(), transparent:true });
+    const roofTopLabel = new THREE.Mesh(roofTopGeo, roofTopMat);
+    roofTopLabel.rotation.x = -Math.PI/2;
+    roofTopLabel.position.y = WALL_H + 0.25;
+    store.add(roofTopLabel);
+
+    // 落地窗（淺藍玻璃，帶一點反光感）
+    const windowGeo = new THREE.PlaneGeometry(1.7, 1.15);
+    const windowMat = new THREE.MeshStandardMaterial({ color:0xbfe6f5, roughness:0.15, metalness:0.2, transparent:true, opacity:0.85 });
+    const windowMesh = new THREE.Mesh(windowGeo, windowMat);
+    windowMesh.position.set(-0.5, 1.05, 1.001);
+    store.add(windowMesh);
+    // 窗框
+    const windowFrameGeo = new THREE.BoxGeometry(1.78, 1.23, 0.04);
+    const windowFrameMat = new THREE.MeshStandardMaterial({ color:0xffffff, roughness:0.5 });
+    const windowFrame = new THREE.Mesh(windowFrameGeo, windowFrameMat);
+    windowFrame.position.set(-0.5, 1.05, 0.99);
+    store.add(windowFrame);
+
+    // 店門（玻璃門+門框，帶橘色把手）
+    const doorGeo = new THREE.PlaneGeometry(0.62, 1.55);
+    const doorMat = new THREE.MeshStandardMaterial({ color:0xdff4ff, roughness:0.2, transparent:true, opacity:0.75 });
+    const door = new THREE.Mesh(doorGeo, doorMat);
+    door.position.set(0.78, 0.83, 1.001);
+    store.add(door);
+    const doorFrameGeo = new THREE.BoxGeometry(0.7, 1.63, 0.04);
+    const doorFrame = new THREE.Mesh(doorFrameGeo, windowFrameMat);
+    doorFrame.position.set(0.78, 0.83, 0.99);
+    store.add(doorFrame);
+    const handleGeo = new THREE.BoxGeometry(0.04,0.22,0.04);
+    const handleMat = new THREE.MeshStandardMaterial({ color:0xe8985a, metalness:0.5, roughness:0.3 });
+    const handle = new THREE.Mesh(handleGeo, handleMat);
+    handle.position.set(0.62, 0.8, 1.03);
+    store.add(handle);
+
+    // 招牌（貼在牆面上段，文字用畫布貼圖）
+    const signGeo = new THREE.PlaneGeometry(2.4, 0.62);
+    const signMat = new THREE.MeshBasicMaterial({ map: makeStoreSignTexture() });
+    const sign = new THREE.Mesh(signGeo, signMat);
+    sign.position.set(0, 1.85, 1.03);
+    store.add(sign);
+    // 招牌背後補一片深色底，避免從背面穿透看到反字
+    const signBackGeo = new THREE.PlaneGeometry(2.4, 0.62);
+    const signBackMat = new THREE.MeshStandardMaterial({ color:0x8a4a1e });
+    const signBack = new THREE.Mesh(signBackGeo, signBackMat);
+    signBack.rotation.y = Math.PI;
+    signBack.position.set(0, 1.85, 1.001);
+    store.add(signBack);
+
+    // 遮陽棚（店門上方，橘白相間條紋感）
+    const awningGeo = new THREE.BoxGeometry(1.0, 0.06, 0.5);
+    const awningMat = new THREE.MeshStandardMaterial({ color:0xff9d5c, roughness:0.7 });
+    const awning = new THREE.Mesh(awningGeo, awningMat);
+    awning.position.set(0.78, 1.62, 1.2);
+    awning.rotation.x = -0.15;
+    awning.castShadow = true;
+    store.add(awning);
+
+    // 門口小裝飾：垃圾桶＋小盆栽，增加生活感
+    const binGeo = new THREE.CylinderGeometry(0.11,0.09,0.28,10);
+    const binMat = new THREE.MeshStandardMaterial({ color:0x9aa3b0, roughness:0.6 });
+    const bin = new THREE.Mesh(binGeo, binMat);
+    bin.position.set(1.35, 0.14, 1.25);
+    bin.castShadow = true;
+    store.add(bin);
+
+    const potGeo = new THREE.CylinderGeometry(0.1,0.08,0.16,10);
+    const potMat = new THREE.MeshStandardMaterial({ color:0xd97a4f, roughness:0.8 });
+    const pot = new THREE.Mesh(potGeo, potMat);
+    pot.position.set(-1.3, 0.08, 1.25);
+    store.add(pot);
+    const leafGeo = new THREE.SphereGeometry(0.16,8,8);
+    const leafMat = new THREE.MeshStandardMaterial({ color:0x4fbf7d, roughness:0.7 });
+    const leaf = new THREE.Mesh(leafGeo, leafMat);
+    leaf.position.set(-1.3, 0.28, 1.25);
+    leaf.scale.set(1,1.3,1);
+    leaf.castShadow = true;
+    store.add(leaf);
+
+    // 招牌燈光：讓招牌晚上（陰影暗處）也顯眼一點
+    const signLight = new THREE.PointLight(0xffb366, 0.6, 3);
+    signLight.position.set(0, 1.85, 1.6);
+    store.add(signLight);
+
+    return store;
+  }
+
+  // ---- 打工中面板：懸浮在屋頂上方的直立看板，列出目前所有打工中的玩家與倒數 ----
+  function makeWorkPanelTexture(lines){
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 384;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(30,20,10,0.88)';
+    ctx.fillRect(0,0,512,384);
+    ctx.strokeStyle = '#ffd28a'; ctx.lineWidth = 8;
+    ctx.strokeRect(6,6,500,372);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffd28a';
+    ctx.font = 'bold 34px sans-serif';
+    ctx.fillText('👷 打工中', 256, 56);
+    if(lines.length===0){
+      ctx.font = '24px sans-serif';
+      ctx.fillStyle = '#cdd';
+      ctx.fillText('目前沒有人在打工', 256, 200);
+    } else {
+      ctx.font = 'bold 28px sans-serif';
+      lines.forEach((line,i)=>{
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(line, 256, 110 + i*54);
+      });
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    return tex;
+  }
+  let workPanelMeshes = [];
+  function buildWorkPanel(){
+    const group = new THREE.Group();
+    const geo = new THREE.PlaneGeometry(2.6, 1.95);
+    const mat = new THREE.MeshBasicMaterial({ map: makeWorkPanelTexture([]), transparent:true });
+    const panel = new THREE.Mesh(geo, mat);
+    panel.position.set(0, 0, 0.01);
+    group.add(panel);
+
+    // 背面：獨立一片，同步顯示同一份內容（不是鏡像），兩面都能正常閱讀
+    const backGeo = new THREE.PlaneGeometry(2.6, 1.95);
+    const backMat = new THREE.MeshBasicMaterial({ map: makeWorkPanelTexture([]), transparent:true });
+    const back = new THREE.Mesh(backGeo, backMat);
+    back.rotation.y = Math.PI;
+    back.position.set(0, 0, -0.01);
+    group.add(back);
+
+    workPanelMeshes = [panel, back];
+    group.visible = false;
+    return group;
+  }
+
+  const storeGroup = buildConvenienceStore();
+  storeGroup.position.set(-3.2, 0, -2.9); // 左上方，跟放大後的軌道保持距離
+  storeGroup.rotation.y = Math.PI; // 門口朝向玩家活動區
+  scene.add(storeGroup);
+
+  const workPanelGroup = buildWorkPanel();
+  workPanelGroup.position.set(-3.2, 4.0, -2.9); // 懸浮在商店屋頂上方
+  scene.add(workPanelGroup);
+
+  function updateWorkPanel(){
+    const lines = Object.values(GAME.workers).map(w=>{
+      const remainSec = Math.max(0, w.durationMinutes*60 - (Date.now()-w.startTime)/1000);
+      const mm = Math.floor(remainSec/60), ss = Math.floor(remainSec%60);
+      return w.player.name+'　剩 '+mm+':'+String(ss).padStart(2,'0');
+    });
+    workPanelGroup.visible = lines.length>0;
+    const tex = makeWorkPanelTexture(lines);
+    workPanelMeshes.forEach(mesh=>{
+      mesh.material.map = tex;
+      mesh.material.needsUpdate = true;
+    });
+  }
+  // 註：位置之後接上獎池視覺化等其他中央擺設時可能還要再微調
+
+  // ================= 中央其他擺設 =================
+
+  // ---- 對獎機用：數字貼圖（1~9，7是紅色特別標示） ----
+  function makeReelDigitTexture(n){
+    const canvas = document.createElement('canvas');
+    canvas.width = 128; canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fffdf5';
+    ctx.fillRect(0,0,128,128);
+    ctx.fillStyle = (n===7) ? '#e8455a' : '#2f2a20';
+    ctx.font = 'bold 92px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(n), 64, 70);
+    return new THREE.CanvasTexture(canvas);
+  }
+  const reelDigitTextures = {};
+  for(let n=1;n<=9;n++){ reelDigitTextures[n] = makeReelDigitTexture(n); }
+
+  // ---- 對獎機（開獎機）：金色拉霸機，三輪數字1~9，777=超級大獎 ----
+  let slotReelMeshes = [];
+  function buildSlotMachine(){
+    const group = new THREE.Group();
+    const bodyGeo = new THREE.BoxGeometry(2.0, 1.6, 0.68);
+    const bodyMat = new THREE.MeshStandardMaterial({ color:0xd4af37, metalness:0.6, roughness:0.35 });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0.9;
+    body.castShadow = true;
+    group.add(body);
+
+    for(let i=0;i<9;i++){
+      const bulbGeo = new THREE.SphereGeometry(0.045,8,8);
+      const bulbMat = new THREE.MeshStandardMaterial({ color:0xfff3c4, emissive:0xffdd66, emissiveIntensity:0.9 });
+      const bulb = new THREE.Mesh(bulbGeo, bulbMat);
+      bulb.position.set(-0.8 + i*0.2, 1.66, 0.35);
+      group.add(bulb);
+    }
+
+    const innerFrameGeo = new THREE.BoxGeometry(1.72, 0.8, 0.1);
+    const innerFrameMat = new THREE.MeshStandardMaterial({ color:0x2a1f10, roughness:0.6 });
+    const innerFrame = new THREE.Mesh(innerFrameGeo, innerFrameMat);
+    innerFrame.position.set(0, 1.0, 0.35);
+    group.add(innerFrame);
+    const innerFrameBack = new THREE.Mesh(innerFrameGeo.clone(), innerFrameMat);
+    innerFrameBack.position.set(0, 1.0, -0.35);
+    group.add(innerFrameBack);
+
+    for(let i=0;i<3;i++){
+      const startTex = reelDigitTextures[1+Math.floor(Math.random()*9)];
+      const reelGeo = new THREE.PlaneGeometry(0.46,0.64);
+      const reelMat = new THREE.MeshBasicMaterial({ map: startTex });
+      const reel = new THREE.Mesh(reelGeo, reelMat);
+      reel.position.set(-0.56 + i*0.56, 1.0, 0.41);
+      group.add(reel);
+
+      // 背面轉輪：同步顯示同一組數字，文字方向正常（不是鏡像），方便從商店後方也看得懂
+      const reelBackGeo = new THREE.PlaneGeometry(0.46,0.64);
+      const reelBackMat = new THREE.MeshBasicMaterial({ map: startTex });
+      const reelBack = new THREE.Mesh(reelBackGeo, reelBackMat);
+      reelBack.position.set(0.56 - i*0.56, 1.0, -0.41);
+      reelBack.rotation.y = Math.PI;
+      group.add(reelBack);
+
+      slotReelMeshes.push({ front:reel, back:reelBack });
+    }
+
+    for(let i=0;i<3;i++){
+      const btnGeo = new THREE.CylinderGeometry(0.08,0.08,0.04,16);
+      const btnMat = new THREE.MeshStandardMaterial({ color:0xfff3c4, emissive:0xffdd66, emissiveIntensity:0.5 });
+      const btn = new THREE.Mesh(btnGeo, btnMat);
+      btn.rotation.x = Math.PI/2;
+      btn.position.set(-0.45+i*0.45, 0.3, 0.38);
+      group.add(btn);
+    }
+
+    [-1.14, 1.14].forEach(xOff=>{
+      const earGeo = new THREE.SphereGeometry(0.2,12,12,0,Math.PI);
+      const earMat = new THREE.MeshStandardMaterial({ color:0xd4af37, metalness:0.6, roughness:0.35 });
+      const ear = new THREE.Mesh(earGeo, earMat);
+      ear.rotation.y = xOff>0 ? Math.PI/2 : -Math.PI/2;
+      ear.position.set(xOff, 1.0, 0);
+      group.add(ear);
+    });
+
+    const baseGeo = new THREE.BoxGeometry(1.3,0.14,0.85);
+    const baseMat = new THREE.MeshStandardMaterial({ color:0x8a6a2a, roughness:0.6 });
+    const base = new THREE.Mesh(baseGeo, baseMat);
+    base.position.y = 0.07;
+    base.castShadow = true;
+    group.add(base);
+
+    // 招牌小字
+    const capGeo = new THREE.PlaneGeometry(1.5,0.2);
+    const capCanvas = document.createElement('canvas');
+    capCanvas.width=512; capCanvas.height=64;
+    const capCtx = capCanvas.getContext('2d');
+    capCtx.fillStyle = '#7a1f2a'; capCtx.fillRect(0,0,512,64);
+    capCtx.fillStyle = '#ffe08a'; capCtx.font='bold 38px sans-serif'; capCtx.textAlign='center'; capCtx.textBaseline='middle';
+    capCtx.fillText('對 獎 機', 256, 34);
+    const capMat = new THREE.MeshBasicMaterial({ map:new THREE.CanvasTexture(capCanvas) });
+    const cap = new THREE.Mesh(capGeo, capMat);
+    cap.position.set(0, 1.86, 0.2);
+    group.add(cap);
+
+    return group;
+  }
+  const slotMachineGroup = buildSlotMachine();
+  slotMachineGroup.scale.setScalar(1.5);
+  slotMachineGroup.position.set(3.8, 0, -2.8);
+  slotMachineGroup.rotation.y = 0;
+  scene.add(slotMachineGroup);
+
+  let slotSpinning = false;
+  function spinSlotMachine(onResult){
+    if(slotSpinning) return;
+    slotSpinning = true;
+    const finals = [1+Math.floor(Math.random()*9), 1+Math.floor(Math.random()*9), 1+Math.floor(Math.random()*9)];
+    const durations = [900, 1350, 1800];
+    slotReelMeshes.forEach((pair, i)=>{
+      let elapsed = 0;
+      const interval = 60;
+      const timer = setInterval(()=>{
+        elapsed += interval;
+        const randDigit = 1+Math.floor(Math.random()*9);
+        pair.front.material.map = reelDigitTextures[randDigit];
+        pair.front.material.needsUpdate = true;
+        pair.back.material.map = reelDigitTextures[randDigit];
+        pair.back.material.needsUpdate = true;
+        if(elapsed >= durations[i]){
+          clearInterval(timer);
+          pair.front.material.map = reelDigitTextures[finals[i]];
+          pair.front.material.needsUpdate = true;
+          pair.back.material.map = reelDigitTextures[finals[i]];
+          pair.back.material.needsUpdate = true;
+          if(i===2){
+            slotSpinning = false;
+            onResult(finals[0], finals[1], finals[2]);
+          }
+        }
+      }, interval);
+    });
+  }
+
+  function evaluateSlotResult(p, a, b, c){
+    if(a===b && b===c){
+      if(a===7){
+        const win = GAME.pool.total;
+        p.money += win;
+        announceEvent('🎉🎉 777！'+p.name+' 中超級大獎，獲得整包獎池 '+fmtMoney(win)+' 元！！');
+        GAME.pool.total = STARTING_MONEY*5;
+      } else {
+        const prize = a*1000;
+        const actual = Math.min(prize, GAME.pool.total);
+        p.money += actual;
+        GAME.pool.total -= actual;
+        announceEvent('🎊 對中 '+a+''+a+''+a+'！'+p.name+' 獲得 '+fmtMoney(actual)+' 元獎金');
+      }
+    } else {
+      announceEvent('🎰 '+p.name+' 開出 '+a+' '+b+' '+c+'，沒有中獎');
+    }
+  }
+
+  // ---- 獎池寶箱（金幣+寶石，堆疊高度依獎池金額變化） ----
+  function buildTreasureChest(){
+    const group = new THREE.Group();
+    const bodyGeo = new THREE.BoxGeometry(1.3,0.62,0.85);
+    const bodyMat = new THREE.MeshStandardMaterial({ color:0x7a4a28, roughness:0.7 });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0.33;
+    body.castShadow = true; body.receiveShadow = true;
+    group.add(body);
+
+    [-0.5,0,0.5].forEach(xOff=>{
+      const bandGeo = new THREE.BoxGeometry(0.07,0.66,0.9);
+      const bandMat = new THREE.MeshStandardMaterial({ color:0xd4af37, metalness:0.6, roughness:0.3 });
+      const band = new THREE.Mesh(bandGeo, bandMat);
+      band.position.set(xOff, 0.33, 0);
+      group.add(band);
+    });
+
+    const lidGeo = new THREE.CylinderGeometry(0.44,0.44,0.85,16,1,false,0,Math.PI);
+    const lidMat = new THREE.MeshStandardMaterial({ color:0x8a5a32, roughness:0.7 });
+    const lid = new THREE.Mesh(lidGeo, lidMat);
+    lid.rotation.z = Math.PI/2;
+    lid.position.set(0, 0.62, -0.5);
+    lid.rotation.x = -1.0;
+    lid.castShadow = true;
+    group.add(lid);
+
+    const coinGroup = new THREE.Group();
+    for(let i=0;i<26;i++){
+      const coinGeo = new THREE.CylinderGeometry(0.09,0.09,0.03,10);
+      const coinMat = new THREE.MeshStandardMaterial({ color:0xffd75e, metalness:0.7, roughness:0.25 });
+      const coin = new THREE.Mesh(coinGeo, coinMat);
+      const ang = Math.random()*Math.PI*2;
+      const rad = Math.random()*0.4;
+      coin.position.set(Math.cos(ang)*rad, 0.58 + Math.random()*0.22, Math.sin(ang)*rad*0.7 - 0.05);
+      coin.rotation.x = Math.PI/2 + (Math.random()-0.5)*0.6;
+      coin.rotation.z = Math.random()*Math.PI;
+      coin.castShadow = true;
+      coinGroup.add(coin);
+    }
+    const gemColors = [0xff5a6a, 0x4f9dff, 0x4fdb8a, 0xd968ff];
+    for(let i=0;i<8;i++){
+      const gemGeo = new THREE.OctahedronGeometry(0.06);
+      const gemColor = gemColors[i%gemColors.length];
+      const gemMat = new THREE.MeshStandardMaterial({ color:gemColor, metalness:0.3, roughness:0.15, emissive:gemColor, emissiveIntensity:0.2 });
+      const gem = new THREE.Mesh(gemGeo, gemMat);
+      const ang = Math.random()*Math.PI*2;
+      const rad = Math.random()*0.36;
+      gem.position.set(Math.cos(ang)*rad, 0.62 + Math.random()*0.2, Math.sin(ang)*rad*0.7 - 0.05);
+      gem.castShadow = true;
+      coinGroup.add(gem);
+    }
+    group.add(coinGroup);
+
+    for(let i=0;i<6;i++){
+      const coinGeo = new THREE.CylinderGeometry(0.08,0.08,0.025,10);
+      const coinMat = new THREE.MeshStandardMaterial({ color:0xffd75e, metalness:0.7, roughness:0.25 });
+      const coin = new THREE.Mesh(coinGeo, coinMat);
+      coin.position.set((Math.random()-0.5)*1.0, 0.02, 0.5+Math.random()*0.25);
+      coin.rotation.x = Math.PI/2;
+      coin.rotation.z = Math.random()*Math.PI;
+      group.add(coin);
+    }
+
+    group.userData.coinGroup = coinGroup;
+    return group;
+  }
+  const treasureChestGroup = buildTreasureChest();
+  treasureChestGroup.scale.setScalar(10/3);
+  treasureChestGroup.position.set(0, 0, 0);
+  treasureChestGroup.rotation.y = 0;
+  scene.add(treasureChestGroup);
+
+  function updateTreasureChestVisual(){
+    const ratio = Math.min(2.2, Math.max(0.5, GAME.pool.total / (STARTING_MONEY*5)));
+    treasureChestGroup.userData.coinGroup.scale.y = ratio;
+  }
+
+  // ---- 擲骰台：給骰子一個「家」 ----
+  function buildDiceTray(){
+    const group = new THREE.Group();
+    const outerGeo = new THREE.CylinderGeometry(0.62,0.62,0.06,32);
+    const outerMat = new THREE.MeshStandardMaterial({ color:0xd4af37, metalness:0.6, roughness:0.3 });
+    const outer = new THREE.Mesh(outerGeo, outerMat);
+    outer.position.y = 0.03;
+    outer.receiveShadow = true;
+    group.add(outer);
+    const innerGeo = new THREE.CylinderGeometry(0.52,0.52,0.03,32);
+    const innerMat = new THREE.MeshStandardMaterial({ color:0x1f5c3f, roughness:0.9 });
+    const inner = new THREE.Mesh(innerGeo, innerMat);
+    inner.position.y = 0.055;
+    inner.receiveShadow = true;
+    group.add(inner);
+    return group;
+  }
+  const diceTrayGroup = buildDiceTray();
+  diceTrayGroup.position.set(0, -0.03, 3.4);
+  scene.add(diceTrayGroup);
+
+  // ---- 回合/玩家資訊看板（3D立牌，跟著遊戲狀態更新） ----
+  function makeTurnBoardTexture(line1, line2){
+    const canvas = document.createElement('canvas');
+    canvas.width=384; canvas.height=256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#2c2f3a';
+    ctx.fillRect(0,0,384,256);
+    ctx.strokeStyle = '#e8985a'; ctx.lineWidth=8;
+    ctx.strokeRect(6,6,372,244);
+    ctx.fillStyle = '#ffd28a';
+    ctx.font = 'bold 38px sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(line1, 192, 100);
+    ctx.font = 'bold 26px sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(line2, 192, 165);
+    return new THREE.CanvasTexture(canvas);
+  }
+  let turnBoardMesh = null;
+  function buildTurnBoard(){
+    const group = new THREE.Group();
+    const postGeo = new THREE.CylinderGeometry(0.05,0.06,1.1,10);
+    const postMat = new THREE.MeshStandardMaterial({ color:0x8a6a4a, roughness:0.7 });
+    const post = new THREE.Mesh(postGeo, postMat);
+    post.position.y = 0.55;
+    post.castShadow = true;
+    group.add(post);
+
+    const boardGeo = new THREE.PlaneGeometry(1.1,0.74);
+    const boardMat = new THREE.MeshBasicMaterial({ map: makeTurnBoardTexture('遊戲進行中','') });
+    const board = new THREE.Mesh(boardGeo, boardMat);
+    board.position.set(0, 1.22, 0.06);
+    group.add(board);
+    const boardBackGeo = new THREE.PlaneGeometry(1.1,0.74);
+    const boardBackMat = new THREE.MeshStandardMaterial({ color:0x2c2f3a });
+    const boardBack = new THREE.Mesh(boardBackGeo, boardBackMat);
+    boardBack.rotation.y = Math.PI;
+    boardBack.position.set(0, 1.22, 0.04);
+    group.add(boardBack);
+
+    turnBoardMesh = board;
+    return group;
+  }
+  const turnBoardGroup = buildTurnBoard();
+  turnBoardGroup.scale.setScalar(2);
+  turnBoardGroup.position.set(-3.6, 0, 3.2);
+  turnBoardGroup.rotation.y = 0;
+  scene.add(turnBoardGroup);
+
+  function updateTurnBoard3D(){
+    if(!turnBoardMesh || PLAYERS.length===0) return;
+    const line2 = victoryMode==='turns' ? ('第 '+(roundCount+1)+'/'+TURN_LIMIT+' 回合') : '破產淘汰制';
+    turnBoardMesh.material.map = makeTurnBoardTexture('輪到：'+curPlayer().name, line2);
+    turnBoardMesh.material.needsUpdate = true;
+  }
+
+  // ---- 裝飾地標建築（純好看，Q版小塔） ----
+  function buildLandmark(){
+    const group = new THREE.Group();
+    const baseGeo = new THREE.CylinderGeometry(0.5,0.55,0.5,12);
+    const baseMat = new THREE.MeshStandardMaterial({ color:0xffb3c6, roughness:0.7 });
+    const base = new THREE.Mesh(baseGeo, baseMat);
+    base.position.y = 0.25;
+    base.castShadow = true;
+    group.add(base);
+
+    const midGeo = new THREE.CylinderGeometry(0.34,0.42,0.7,12);
+    const midMat = new THREE.MeshStandardMaterial({ color:0xffe08a, roughness:0.7 });
+    const mid = new THREE.Mesh(midGeo, midMat);
+    mid.position.y = 0.85;
+    mid.castShadow = true;
+    group.add(mid);
+
+    const topGeo = new THREE.ConeGeometry(0.36,0.55,12);
+    const topMat = new THREE.MeshStandardMaterial({ color:0x8fd9c4, roughness:0.6 });
+    const top = new THREE.Mesh(topGeo, topMat);
+    top.position.y = 1.5;
+    top.castShadow = true;
+    group.add(top);
+
+    const flagPoleGeo = new THREE.CylinderGeometry(0.015,0.015,0.35,6);
+    const flagPoleMat = new THREE.MeshStandardMaterial({ color:0xffffff });
+    const flagPole = new THREE.Mesh(flagPoleGeo, flagPoleMat);
+    flagPole.position.y = 1.95;
+    group.add(flagPole);
+
+    const flagGeo = new THREE.PlaneGeometry(0.18,0.12);
+    const flagMat = new THREE.MeshStandardMaterial({ color:0xff8fab, side:THREE.DoubleSide });
+    const flag = new THREE.Mesh(flagGeo, flagMat);
+    flag.position.set(0.1, 2.05, 0);
+    group.add(flag);
+
+    return group;
+  }
+  const landmarkGroup = buildLandmark();
+  landmarkGroup.position.set(3.6, 0, 3.2);
+  scene.add(landmarkGroup);
+  // ---- 環繞中央的火車軌道 + 小火車 ----
+  function buildTrainTrack(hw, hz, r){
+    const path = new THREE.Path();
+    path.moveTo(-hw+r, -hz);
+    path.lineTo(hw-r, -hz);
+    path.absarc(hw-r, -hz+r, r, -Math.PI/2, 0, false);
+    path.lineTo(hw, hz-r);
+    path.absarc(hw-r, hz-r, r, 0, Math.PI/2, false);
+    path.lineTo(-hw+r, hz);
+    path.absarc(-hw+r, hz-r, r, Math.PI/2, Math.PI, false);
+    path.lineTo(-hw, -hz+r);
+    path.absarc(-hw+r, -hz+r, r, Math.PI, Math.PI*1.5, false);
+
+    const pts2D = path.getPoints(64);
+    const pts3D = pts2D.map(p=> new THREE.Vector3(p.x, 0.02, p.y));
+
+    const group = new THREE.Group();
+    const railMat = new THREE.MeshStandardMaterial({ color:0x9aa3b0, metalness:0.6, roughness:0.3 });
+    const tieMat = new THREE.MeshStandardMaterial({ color:0x6b4a2f, roughness:0.8 });
+    const railGap = 0.48; // 軌距放大3倍
+
+    for(let i=0;i<pts3D.length;i++){
+      const p0 = pts3D[i];
+      const p1 = pts3D[(i+1)%pts3D.length];
+      const dir = new THREE.Vector3().subVectors(p1,p0);
+      const len = dir.length();
+      if(len<0.001) continue;
+      dir.normalize();
+      const perp = new THREE.Vector3(-dir.z,0,dir.x);
+      const mid = new THREE.Vector3().addVectors(p0,p1).multiplyScalar(0.5);
+      const angle = Math.atan2(dir.x, dir.z);
+
+      [-railGap/2, railGap/2].forEach(off=>{
+        const railGeo = new THREE.BoxGeometry(0.105, 0.09, len+0.03);
+        const rail = new THREE.Mesh(railGeo, railMat);
+        rail.position.copy(mid).addScaledVector(perp, off);
+        rail.position.y = 0.045;
+        rail.rotation.y = angle;
+        group.add(rail);
+      });
+
+      if(i % 3 === 0){
+        const tieGeo = new THREE.BoxGeometry(railGap+0.3, 0.05, 0.24);
+        const tie = new THREE.Mesh(tieGeo, tieMat);
+        tie.position.copy(p0);
+        tie.position.y = 0.02;
+        tie.rotation.y = angle;
+        group.add(tie);
+      }
+    }
+
+    // 記錄每段實際長度與總長度，火車移動才能用「等距離」而不是「等點數」前進
+    // （這是先前「過彎後瞬移」的根本原因：直線段只有2個取樣點、圓弧卻有100+個點，
+    //  若照點數等速前進，直線段幾乎一格就跳過去、圓弧卻要跑很久）
+    const segLens = [];
+    let totalLength = 0;
+    for(let i=0;i<pts3D.length;i++){
+      const p0 = pts3D[i], p1 = pts3D[(i+1)%pts3D.length];
+      const d = p0.distanceTo(p1);
+      segLens.push(d);
+      totalLength += d;
+    }
+    group.userData.pathPoints = pts3D;
+    group.userData.segLens = segLens;
+    group.userData.totalLength = totalLength;
+    return group;
+  }
+
+  function buildTrainModel(){
+    const train = new THREE.Group();
+
+    // 車體零件沿本地Z軸排列（前=+Z，後=-Z），對應轉向公式 atan2(dir.x,dir.z)
+    const bodyGeo = new THREE.CylinderGeometry(0.14,0.14,0.5,12);
+    const bodyMat = new THREE.MeshStandardMaterial({ color:0xd9453f, roughness:0.5 });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.rotation.x = Math.PI/2; // 圓柱軸心改沿Z
+    body.position.set(0, 0.22, 0.1);
+    body.castShadow = true;
+    train.add(body);
+
+    const cabGeo = new THREE.BoxGeometry(0.26,0.26,0.28);
+    const cabMat = new THREE.MeshStandardMaterial({ color:0x2c2f3a, roughness:0.6 });
+    const cab = new THREE.Mesh(cabGeo, cabMat);
+    cab.position.set(0, 0.28, -0.28);
+    cab.castShadow = true;
+    train.add(cab);
+
+    const chimneyGeo = new THREE.CylinderGeometry(0.035,0.045,0.16,10);
+    const chimneyMat = new THREE.MeshStandardMaterial({ color:0x1a1a1a, roughness:0.6 });
+    const chimney = new THREE.Mesh(chimneyGeo, chimneyMat);
+    chimney.position.set(0, 0.42, 0.32);
+    chimney.castShadow = true;
+    train.add(chimney);
+
+    const wheelMat = new THREE.MeshStandardMaterial({ color:0x1a1a1a, roughness:0.5 });
+    [-0.28,-0.05,0.18].forEach(z=>{
+      [-0.15,0.15].forEach(xOff=>{
+        const wGeo = new THREE.CylinderGeometry(0.09,0.09,0.04,14);
+        const w = new THREE.Mesh(wGeo, wheelMat);
+        w.rotation.z = Math.PI/2;
+        w.position.set(xOff, 0.09, z);
+        train.add(w);
+      });
+    });
+
+    const lampGeo = new THREE.SphereGeometry(0.05,8,8);
+    const lampMat = new THREE.MeshStandardMaterial({ color:0xfff3c4, emissive:0xffe27a, emissiveIntensity:0.8 });
+    const lamp = new THREE.Mesh(lampGeo, lampMat);
+    lamp.position.set(0, 0.3, 0.4);
+    train.add(lamp);
+
+    return train;
+  }
+
+  const trainTrackGroup = buildTrainTrack(6.3, 5.2, 1.3);
+  scene.add(trainTrackGroup);
+  const trainModel = buildTrainModel();
+  trainModel.scale.setScalar(3); // 火車放大3倍
+  scene.add(trainModel);
+
+  let trainDist = 0;
+  let lastTrainTime = null;
+  const TRAIN_SPEED_UNITS = 2.2; // 每秒移動的世界單位距離（等速，不受畫面更新率或路徑點密度影響）
+  function updateTrainPosition(){
+    const pts = trainTrackGroup.userData.pathPoints;
+    const segLens = trainTrackGroup.userData.segLens;
+    const total = trainTrackGroup.userData.totalLength;
+    const now = clock.getElapsedTime();
+    if(lastTrainTime===null) lastTrainTime = now;
+    const dt = now - lastTrainTime;
+    lastTrainTime = now;
+
+    trainDist += TRAIN_SPEED_UNITS * dt;
+    if(trainDist >= total) trainDist -= total;
+
+    let remain = trainDist, idx = 0;
+    while(remain > segLens[idx] && idx < segLens.length-1){
+      remain -= segLens[idx];
+      idx = (idx+1) % segLens.length;
+    }
+    const p0 = pts[idx], p1 = pts[(idx+1)%pts.length];
+    const frac = segLens[idx] > 0 ? remain/segLens[idx] : 0;
+    trainModel.position.lerpVectors(p0,p1,frac);
+    trainModel.position.y = 0.02;
+    const dir = new THREE.Vector3().subVectors(p1,p0);
+    if(dir.length()>0.0001){ trainModel.rotation.y = Math.atan2(dir.x, dir.z); }
+  }
+
+  // ================= 中央其他擺設結束 =================
+
+  // ================= 遊戲狀態與地產/事件邏輯 =================
+  // ---- 多玩家狀態（依設定畫面選擇動態產生） ----
+  const AI_COLORS = [0x4f8ad9, 0x4fbf7d, 0xb04fd9]; // 最多3個AI對手的顏色
+  const AI_START_TILES = [15, 25, 35]; // 分散在棋盤不同位置
+
+  let PLAYERS = [];
+  let currentPlayerIdx = 0;
+  let victoryMode = null; // 'bankruptcy' | 'turns'
+  const TURN_LIMIT = 30;
+  let roundCount = 0;
+  let gameEnded = false;
+
+  function buildPlayers(aiCount){
+    const list = [
+      { id:0, name:'你', isHuman:true, color:0xe8985a, money:STARTING_MONEY, skillPoints:0, properties:[], inJail:false, jailTurnsLeft:0, tileIndex:5, anchor:null, characterRef:null, eliminated:false }
+    ];
+    for(let i=0;i<aiCount;i++){
+      list.push({
+        id:i+1, name:'AI對手'+(i+1), isHuman:false, color:AI_COLORS[i], money:STARTING_MONEY,
+        skillPoints:0, properties:[], inJail:false, jailTurnsLeft:0, tileIndex:AI_START_TILES[i],
+        anchor:null, characterRef:null, eliminated:false
+      });
+    }
+    return list;
+  }
+
+  // ---- 連線多人模式：依伺服器送來的座位順序建立玩家（全部都是真人，沒有AI）----
+  const MP_SEAT_COLORS = [0xe8985a, 0x4f8ad9, 0x4fbf7d, 0xb04fd9];
+  const MP_SEAT_START_TILES = [5, 15, 25, 35];
+  function buildPlayersMP(seatOrder){
+    return seatOrder.map((seat, i)=>({
+      id:i, socketId:seat.id, name:seat.name, isHuman:true, isLocal:(seat.id===MP.myId),
+      charId: seat.characterId || 'char1',
+      color: MP_SEAT_COLORS[i % MP_SEAT_COLORS.length], money:STARTING_MONEY, skillPoints:0,
+      properties:[], inJail:false, jailTurnsLeft:0, tileIndex: MP_SEAT_START_TILES[i % MP_SEAT_START_TILES.length],
+      anchor:null, characterRef:null, eliminated:false
+    }));
+  }
+  function curPlayer(){ return PLAYERS[currentPlayerIdx]; }
+
+  const STARTING_MONEY = 30000;
+  const GAME = { pool: { total: STARTING_MONEY * 5 }, workers: {} }; // pool=獎池；workers=打工中玩家(playerId -> {player,startTime,durationMinutes})
+
+  const turnBannerEl = document.getElementById('turnBanner');
+  const playerListEl = document.getElementById('playerList');
+  const skillBtnEl = document.getElementById('skillBtn');
+  const floatLayerEl = document.getElementById('floatLayer');
+
+  function fmtMoney(n){ return n.toLocaleString('zh-Hant'); }
+  function loseMoney(p, amount, reason){ p.money -= amount; p.lastLossReason = reason; }
+
+  const eventBannerEl = document.getElementById('eventBanner');
+  let eventBannerTimer = null;
+  function announceEvent(text){
+    eventBannerEl.textContent = text;
+    eventBannerEl.classList.add('show');
+    clearTimeout(eventBannerTimer);
+    eventBannerTimer = setTimeout(()=>{ eventBannerEl.classList.remove('show'); }, 2600);
+  }
+
+  const poolBarEl = document.getElementById('poolBar');
+
+  function refreshStatBar(){
+    if(PLAYERS.length===0) return;
+    if(gameEnded) return;
+    turnBannerEl.textContent = '🎯 輪到：'+curPlayer().name;
+    poolBarEl.textContent = '🏆 獎池：'+fmtMoney(GAME.pool.total)+' 元';
+    updateTreasureChestVisual();
+    updateTurnBoard3D();
+    playerListEl.innerHTML = '';
+    PLAYERS.forEach((p,i)=>{
+      const card = document.createElement('div');
+      card.className = 'playerCard' + (i===currentPlayerIdx ? ' active' : '');
+      card.innerHTML =
+        '<b style="color:#'+p.color.toString(16).padStart(6,'0')+'">● '+p.name+'</b><br>'+
+        '💰 '+fmtMoney(p.money)+' · 🏠 '+p.properties.length+' 筆'+
+        (p.inJail ? '<br>⛓ 監獄剩 '+p.jailTurnsLeft+' 回合' : '')+
+        '<br>✨ 技能 '+p.skillPoints+'/10';
+      playerListEl.appendChild(card);
+    });
+    skillBtnEl.textContent = '✨ 技能 '+curPlayer().skillPoints+'/10';
+    skillBtnEl.classList.toggle('ready', curPlayer().isHuman && curPlayer().skillPoints>=10);
+
+    if(typeof workBtnRef !== 'undefined' && workBtnRef){
+      const p = curPlayer();
+      workBtnRef.disabled = !(p.isHuman && !p.inJail && !GAME.workers[p.id] && modelReady && (!MP.enabled || p.isLocal));
+    }
+    if(typeof workStopBtn !== 'undefined' && workStopBtn){
+      const human = PLAYERS.find(pl=>pl.isHuman);
+      workStopBtn.style.display = (human && GAME.workers[human.id]) ? 'inline-block' : 'none';
+    }
+  }
+
+  function showFloatText(text, worldPos){
+    const v = worldPos.clone().project(camera);
+    const x = (v.x*0.5+0.5)*window.innerWidth;
+    const y = (-v.y*0.5+0.5)*window.innerHeight;
+    const el = document.createElement('div');
+    el.className = 'floatText';
+    el.textContent = text;
+    el.style.left = x+'px';
+    el.style.top = y+'px';
+    floatLayerEl.appendChild(el);
+    let t=0;
+    function anim(){
+      t+=1;
+      el.style.top = (y - t*0.6)+'px';
+      el.style.opacity = String(1 - t/60);
+      if(t<60) requestAnimationFrame(anim); else el.remove();
+    }
+    anim();
+  }
+
+  // ---- 通用彈窗系統 ----
+  const modalOverlay = document.getElementById('modalOverlay');
+  const modalTitle = document.getElementById('modalTitle');
+  const modalDesc = document.getElementById('modalDesc');
+  const modalButtons = document.getElementById('modalButtons');
+  const miniGameBar = document.getElementById('miniGameBar');
+  const miniGameZone = document.getElementById('miniGameZone');
+  const miniGameCursor = document.getElementById('miniGameCursor');
+
+  function showModal({title, desc, buttons}){
+    modalTitle.textContent = title;
+    modalDesc.textContent = desc;
+    miniGameBar.style.display = 'none';
+    modalButtons.innerHTML = '';
+    buttons.forEach(b=>{
+      const btn = document.createElement('button');
+      btn.className = b.primary ? 'btnPrimary' : 'btnSecondary';
+      btn.textContent = b.label;
+      btn.addEventListener('click', ()=>{ hideModal(); b.onClick && b.onClick(); });
+      modalButtons.appendChild(btn);
+    });
+    modalOverlay.classList.add('show');
+  }
+  function hideModal(){ modalOverlay.classList.remove('show'); }
+
+  // 決策：人類彈窗互動，AI自動延遲選擇（預設選最後一個按鈕，通常是「買/蓋房」等積極選項）
+  function decisionOrAuto(cfg){
+    if(!curPlayer().isHuman){
+      announceEvent('🤖 '+curPlayer().name+' 思考中…');
+      setTimeout(()=>{ const b = cfg.buttons[cfg.aiChoiceIndex ?? cfg.buttons.length-1]; b.onClick && b.onClick(); }, 700);
+    } else {
+      showModal(cfg);
+    }
+  }
+
+  // ---- 佔位小遊戲：時機反應測試（之後替換成奪寶/對戰/建造專屬玩法） ----
+  function playPlaceholderMinigame(title, desc, onDone){
+    modalTitle.textContent = title;
+    modalDesc.textContent = desc + '\n（佔位小遊戲：時機點擊按鈕，準了就贏）';
+    modalButtons.innerHTML = '';
+    miniGameBar.style.display = 'block';
+
+    const zoneWidth = 18 + Math.random()*10; // %
+    const zoneLeft = 10 + Math.random()*(72-zoneWidth);
+    miniGameZone.style.left = zoneLeft+'%';
+    miniGameZone.style.width = zoneWidth+'%';
+
+    let pos = 0, dir = 1, running = true;
+    const speed = 2.2;
+    function tick(){
+      if(!running) return;
+      pos += dir*speed;
+      if(pos>=100){ pos=100; dir=-1; }
+      if(pos<=0){ pos=0; dir=1; }
+      miniGameCursor.style.left = pos+'%';
+      requestAnimationFrame(tick);
+    }
+    tick();
+
+    const goBtn = document.createElement('button');
+    goBtn.className = 'btnPrimary';
+    goBtn.textContent = '按下！';
+    goBtn.addEventListener('click', ()=>{
+      running = false;
+      const win = (pos >= zoneLeft && pos <= zoneLeft+zoneWidth);
+      hideModal();
+      onDone(win);
+    });
+    modalButtons.appendChild(goBtn);
+    modalOverlay.classList.add('show');
+  }
+  // 小遊戲：人類走互動流程，AI自動延遲後隨機（示範版）判定輸贏
+  function minigameOrAuto(title, desc, onDone){
+    if(!curPlayer().isHuman){
+      setTimeout(()=>{ onDone(Math.random()<0.5); }, 600);
+    } else {
+      playPlaceholderMinigame(title, desc, onDone);
+    }
+  }
+
+  // ---- 機會/命運卡 ----
+  const CHANCE_CARDS = [
+    { text:'銀行配息，獲得 500 元', effect:(p, done)=>{ p.money+=500; announceEvent('💰 '+p.name+' 銀行配息 +500 元'); done(); } },
+    { text:'罰款，繳交 300 元', effect:(p, done)=>{ loseMoney(p,300,'機會卡罰款'); announceEvent('🧾 '+p.name+' 罰款 -300 元'); done(); } },
+    { text:'前進到起點，領取獎金 1000 元', effect:(p, done)=>{ p.money+=1000; teleportPlayerTo(p, 0); announceEvent('🏁 '+p.name+' 前進到起點，領取 1000 元'); done(); } },
+    { text:'倒退 3 格', effect:(p, done)=>{ moveTokenBySteps(p, -3, done); announceEvent('⬅️ '+p.name+' 倒退 3 格'); } },
+    { text:'直接送進監獄', effect:(p, done)=>{ sendToJail(p); done(); } },
+    { text:'獎池挑戰！過關可轉動對獎機試手氣', effect:(p, done)=>{
+        minigameOrAuto('獎池挑戰', '過關後可以轉動對獎機，777是超級大獎！', (win)=>{
+          if(win){
+            announceEvent('🎰 '+p.name+' 過關！轉動對獎機中…');
+            spinSlotMachine((a,b,c)=>{
+              evaluateSlotResult(p, a, b, c);
+              refreshStatBar();
+              done();
+            });
+          } else {
+            showFloatText('挑戰失敗', playerWorldPos(p));
+            announceEvent('💥 '+p.name+' 獎池挑戰失敗');
+            refreshStatBar();
+            done();
+          }
+        });
+      } },
+  ];
+  function drawChanceCard(onComplete){
+    const card = CHANCE_CARDS[Math.floor(Math.random()*CHANCE_CARDS.length)];
+    const p = curPlayer();
+    decisionOrAuto({
+      title:'🎴 機會/命運',
+      desc: card.text,
+      buttons:[{ label:'確定', primary:true, onClick:()=>{ card.effect(p, ()=>{ refreshStatBar(); onComplete(); }); } }]
+    });
+  }
+
+  // ---- 建築視覺（樓層方塊 + 倒數文字） ----
+  const buildingVisuals = {};
+  function buildDurationForLevel(level){ return 300 + (level-1)*120; } // 秒：1樓5分鐘，之後每加一層+2分鐘
+  function updateBuildingVisual(index){
+    const td = TILE_DATA[index];
+    const pos = tilePositions[index];
+    if(buildingVisuals[index]){
+      tileGroup.remove(buildingVisuals[index].group);
+      delete buildingVisuals[index];
+    }
+    if(!td.building || td.building.level<=0) return;
+    const g = new THREE.Group();
+    for(let lv=0; lv<td.building.level; lv++){
+      const geo = new THREE.BoxGeometry(TILE*0.5, 0.35, TILE*0.5);
+      const mat = new THREE.MeshStandardMaterial({ color:0xf0e6d2, roughness:0.7 });
+      const box = new THREE.Mesh(geo, mat);
+      box.position.set(pos.x, 0.1 + lv*0.36, pos.z);
+      box.castShadow = true;
+      g.add(box);
+    }
+    tileGroup.add(g);
+    buildingVisuals[index] = { group:g };
+  }
+
+  const constructionTimers = {};
+  function startConstruction(index, targetLevel){
+    const td = TILE_DATA[index];
+    const dur = buildDurationForLevel(targetLevel);
+    td.building.buildStartTime = Date.now();
+    td.building.buildDuration = dur;
+    td.building.pendingLevel = targetLevel;
+    mpBroadcastInstant({ type:'construction_start', index, buildStartTime: td.building.buildStartTime, buildDuration: dur, pendingLevel: targetLevel });
+  }
+  function checkConstructionProgress(){
+    TILE_DATA.forEach(td=>{
+      if(td.type!=='property' || !td.building || td.building.buildStartTime==null) return;
+      const elapsed = (Date.now() - td.building.buildStartTime) / 1000;
+      const remain = Math.max(0, td.building.buildDuration - elapsed);
+      const pos = tilePositions[td.index];
+      let label = constructionTimers[td.index];
+      if(!label){
+        label = document.createElement('div');
+        label.className = 'floatText';
+        floatLayerEl.appendChild(label);
+        constructionTimers[td.index] = label;
+      }
+      if(remain>0){
+        const v = new THREE.Vector3(pos.x, 1.6, pos.z).project(camera);
+        label.style.left = ((v.x*0.5+0.5)*window.innerWidth)+'px';
+        label.style.top = ((-v.y*0.5+0.5)*window.innerHeight)+'px';
+        label.style.display = 'block';
+        const remSec = Math.ceil(remain);
+        const mm = Math.floor(remSec/60), ss = remSec%60;
+        label.textContent = '🏗 施工中 '+mm+':'+String(ss).padStart(2,'0');
+      } else {
+        label.style.display = 'none';
+        td.building.level = td.building.pendingLevel;
+        td.building.buildStartTime = null;
+        updateBuildingVisual(td.index);
+        refreshTileLabel(td.index);
+        announceEvent('🏠 「'+td.name+'」完工！目前 '+td.building.level+' 樓');
+      }
+    });
+  }
+
+  // ---- 玩家移動輔助（通用，支援真人動畫角色與AI簡易棋子） ----
+  function teleportPlayerTo(p, index){
+    p.tileIndex = index;
+    p.anchor.position.set(tilePositions[index].x, 0, tilePositions[index].z);
+  }
+  function playerWorldPos(p){
+    const v = new THREE.Vector3(); p.anchor.getWorldPosition(v); v.y += 1.6; return v;
+  }
+  function sendToJail(p){
+    p.inJail = true;
+    p.jailTurnsLeft = 3;
+    teleportPlayerTo(p, 10);
+    refreshStatBar();
+    announceEvent('⛓ '+p.name+' 被送進監獄，接下來 3 回合無法移動');
+  }
+
+  // ---- 打工商店：開始上工 / 中途結束 / 自動完成 ----
+  const WORK_RATE_PER_MIN = 50; // 1分鐘賺50元
+
+  function startWorking(p, minutes){
+    GAME.workers[p.id] = { player:p, startTime: Date.now(), durationMinutes: minutes };
+    if(p.anchor) p.anchor.visible = false; // 棋子從棋盤消失
+    updateWorkPanel();
+    refreshStatBar();
+    announceEvent('👷 '+p.name+' 開始打工，預計 '+minutes+' 分鐘後結束');
+    mpBroadcastInstant({ type:'work_start', playerId:p.id, startTime: GAME.workers[p.id].startTime, durationMinutes: minutes });
+  }
+
+  function finishWorking(p, isEarly){
+    const w = GAME.workers[p.id];
+    if(!w) return;
+    const elapsedMin = (Date.now() - w.startTime) / 60000;
+    const earned = Math.round(Math.min(elapsedMin, w.durationMinutes) * WORK_RATE_PER_MIN);
+    p.money += earned;
+    delete GAME.workers[p.id];
+    if(p.anchor) p.anchor.visible = true; // 棋子回到棋盤
+    updateWorkPanel();
+    refreshStatBar();
+    announceEvent((isEarly ? '🏃 ' : '🔔 ') + p.name + (isEarly ? ' 提前結束打工，' : ' 打工時間到，') + '賺得 '+fmtMoney(earned)+' 元');
+    if(isEarly) mpBroadcastInstant({ type:'work_finish_early', playerId:p.id });
+  }
+
+  function checkWorkersProgress(){
+    Object.values(GAME.workers).forEach(w=>{
+      const elapsedSec = (Date.now() - w.startTime) / 1000;
+      if(elapsedSec >= w.durationMinutes*60){
+        finishWorking(w.player, false);
+      }
+    });
+  }
+
+  function resetBindPoseFor(charRef){
+    Object.keys(charRef.bindPose).forEach(idx=>{
+      const o = charRef.nodeObjects[idx];
+      const bp = charRef.bindPose[idx];
+      o.position.copy(bp.pos); o.quaternion.copy(bp.quat); o.scale.copy(bp.scale);
+    });
+  }
+  function movePlayerOneStep(p, dirSign, onDone){
+    const nextIdx = ((p.tileIndex + dirSign) % TOTAL_TILES + TOTAL_TILES) % TOTAL_TILES;
+    const from = p.anchor.position.clone();
+    const to = new THREE.Vector3(tilePositions[nextIdx].x, 0, tilePositions[nextIdx].z);
+    const dir = new THREE.Vector3().subVectors(to, from);
+    if(dir.length()>0.001) p.anchor.rotation.y = Math.atan2(dir.x, dir.z);
+
+    if(p.characterRef){
+      p.characterRef.walking = true;
+      const walkClip = p.characterRef.clips.find(c=>/walk/i.test(c.name)) || p.characterRef.clips[0];
+      p.characterRef.currentClip = walkClip;
+      p.characterRef.clipStart = clock.getElapsedTime();
+    }
+    const duration = 0.55;
+    const startTime = clock.getElapsedTime();
+    function step(){
+      const t = Math.min(1, (clock.getElapsedTime()-startTime)/duration);
+      p.anchor.position.lerpVectors(from, to, t);
+      if(t<1){ requestAnimationFrame(step); }
+      else{
+        p.tileIndex = nextIdx;
+        if(p.characterRef){ p.characterRef.walking=false; p.characterRef.currentClip=null; resetBindPoseFor(p.characterRef); }
+        if(onDone) onDone();
+      }
+    }
+    step();
+  }
+  function movePlayerSteps(p, n, onAllDone){
+    if(n<=0){ if(onAllDone) onAllDone(); return; }
+    const dirSign = n>0 ? 1 : -1;
+    movePlayerOneStep(p, dirSign, ()=>{ movePlayerSteps(p, n - dirSign, onAllDone); });
+  }
+  function moveTokenBySteps(p, steps, onDone){
+    // 機會卡用：不特別做走路動畫，直接位移
+    const newIndex = ((p.tileIndex + steps) % TOTAL_TILES + TOTAL_TILES) % TOTAL_TILES;
+    teleportPlayerTo(p, newIndex);
+    if(onDone) setTimeout(onDone, 200);
+  }
+
+  // ---- 停留格事件處理（結束時務必呼叫 onComplete 才會換下一位玩家） ----
+  function handleLandOnTile(index, onComplete){
+    const td = TILE_DATA[index];
+    const p = curPlayer();
+
+    if(td.type==='go'){ announceEvent('🏁 '+p.name+' 抵達起點 GO'); refreshStatBar(); onComplete(); return; }
+    if(td.type==='free_parking'){ announceEvent('🅿️ '+p.name+' 免費停車，無事發生'); refreshStatBar(); onComplete(); return; }
+    if(td.type==='jail'){ announceEvent('🚧 '+p.name+' 只是路過監獄，安全'); refreshStatBar(); onComplete(); return; }
+    if(td.type==='goto_jail'){ sendToJail(p); onComplete(); return; }
+    if(td.type==='tax'){
+      loseMoney(p, td.amount, '繳納稅金');
+      showFloatText('-'+fmtMoney(td.amount)+' 稅金', playerWorldPos(p));
+      announceEvent('🧾 '+p.name+' 繳納稅金 '+fmtMoney(td.amount)+' 元');
+      refreshStatBar();
+      onComplete();
+      return;
+    }
+    if(td.type==='chest'){
+      announceEvent('🎴 '+p.name+' 抽到機會/命運卡！');
+      drawChanceCard(onComplete);
+      return;
+    }
+    if(td.type==='property'){
+      if(td.owner===null){
+        if(p.money < td.price){
+          decisionOrAuto({
+            title: td.name,
+            desc: '無主地產，價格 '+fmtMoney(td.price)+' 元。你的資金不足，無法購買。',
+            aiChoiceIndex: 0,
+            buttons:[ { label:'知道了', primary:true, onClick:()=>{ announceEvent('💸 '+p.name+' 資金不足，無法購買 '+td.name); onComplete(); } } ]
+          });
+          return;
+        }
+        decisionOrAuto({
+          title: td.name,
+          desc: '無主地產，價格 '+fmtMoney(td.price)+' 元。要購買嗎？',
+          aiChoiceIndex: 1,
+          buttons:[
+            { label:'不買', onClick:()=>{ announceEvent(p.name+' 放棄購買 '+td.name); onComplete(); } },
+            { label:'購買（需闖關）', primary:true, onClick:()=>{
+                triggerForcedMinigame('buy', index, '奪寶挑戰', '贏了才能買下 '+td.name, (win)=>{
+                  if(win){
+                    p.money -= td.price;
+                    td.owner = p.id;
+                    p.properties.push(index);
+                    showFloatText('取得 '+td.name, playerWorldPos(p));
+                    markPropertyOwned(index, p.color);
+                    refreshTileLabel(index);
+                    announceEvent('🎉 '+p.name+' 奪寶成功！取得「'+td.name+'」，花費 '+fmtMoney(td.price));
+                  } else {
+                    const penalty = Math.round(td.price*0.15);
+                    const poolCut = Math.round(penalty/10);
+                    loseMoney(p, penalty, '奪寶挑戰失敗（'+td.name+'）');
+                    GAME.pool.total += poolCut;
+                    showFloatText('挑戰失敗 -'+fmtMoney(penalty), playerWorldPos(p));
+                    announceEvent('💥 '+p.name+' 奪寶失敗，損失 '+fmtMoney(penalty)+'（其中 '+fmtMoney(poolCut)+' 進入獎池）');
+                  }
+                  refreshStatBar();
+                  onComplete();
+                });
+              } }
+          ]
+        });
+      } else if(td.owner!==p.id){
+        const owner = PLAYERS.find(pl=>pl.id===td.owner);
+        triggerForcedMinigame('rent', index, '地產對戰', owner.name+' 的 '+td.name+'，輸了要付租金', (win)=>{
+          if(win){ showFloatText('對戰獲勝，免租！', playerWorldPos(p)); announceEvent('⚔️ '+p.name+' 對戰獲勝，免付租金！'); }
+          else {
+            loseMoney(p, td.baseRent, '付租金給 '+owner.name+'（'+td.name+'）');
+            owner.money += td.baseRent;
+            showFloatText('-'+fmtMoney(td.baseRent)+' 租金', playerWorldPos(p));
+            announceEvent('⚔️ '+p.name+' 對戰落敗，付給 '+owner.name+' 租金 '+fmtMoney(td.baseRent)+' 元');
+          }
+          refreshStatBar();
+          onComplete();
+        });
+      } else {
+        const nextLevel = td.building.level+1;
+        const buildCost = 800*nextLevel;
+        const levelMaxed = td.building.level >= 5 || td.building.buildStartTime!=null;
+        const canAfford = p.money >= buildCost;
+        const canBuild = !levelMaxed && canAfford;
+        let desc = '你的地產，目前 '+td.building.level+' 樓。';
+        if(levelMaxed) desc += '（施工中或已達上限）';
+        else if(!canAfford) desc += '加蓋 '+nextLevel+' 樓需要 '+fmtMoney(buildCost)+' 元，資金不足。';
+        else desc += '加蓋 '+nextLevel+' 樓需要 '+fmtMoney(buildCost)+' 元，要蓋嗎？';
+        decisionOrAuto({
+          title: td.name,
+          desc,
+          aiChoiceIndex: canBuild ? 1 : 0,
+          buttons: canBuild ? [
+            { label:'略過', onClick:()=>{ onComplete(); } },
+            { label:'蓋房子（需闖關）', primary:true, onClick:()=>{
+                triggerForcedMinigame('build', index, '建造挑戰', '贏了開始起造 '+nextLevel+' 樓', (win)=>{
+                  if(win){
+                    loseMoney(p, buildCost, '支付建造費用（'+td.name+'）');
+                    startConstruction(index, nextLevel);
+                    showFloatText('開始施工 -'+fmtMoney(buildCost), playerWorldPos(p));
+                    announceEvent('🏗 '+p.name+' 開始施工，'+nextLevel+' 樓建造中（花費 '+fmtMoney(buildCost)+'）');
+                  } else {
+                    const penalty=600;
+                    const poolCut = Math.round(penalty/10);
+                    loseMoney(p, penalty, '建造挑戰失敗（'+td.name+'）');
+                    GAME.pool.total+=poolCut;
+                    showFloatText('挑戰失敗 -'+fmtMoney(penalty), playerWorldPos(p));
+                    announceEvent('💥 '+p.name+' 建造挑戰失敗，損失 '+fmtMoney(penalty)+'（其中 '+fmtMoney(poolCut)+' 進入獎池）');
+                  }
+                  refreshStatBar();
+                  onComplete();
+                });
+              } }
+          ] : [ { label:'知道了', primary:true, onClick:()=>{ onComplete(); } } ]
+        });
+      }
+      return;
+    }
+    onComplete();
+  }
+
+  // ---- 技能點數 ----
+  function checkPassBonus(p, fromIndex, toIndexRaw){
+    let i = fromIndex;
+    const passCorners = new Set([0,10,20]);
+    for(let step=0; step<40; step++){
+      i = (i+1) % TOTAL_TILES;
+      if(passCorners.has(i)){ p.skillPoints = Math.min(10, p.skillPoints+1); }
+      if(i===toIndexRaw) break;
+    }
+  }
+
+  skillBtnEl.addEventListener('click', ()=>{
+    const p = curPlayer();
+    if(MP.enabled && !p.isLocal) return; // 連線模式下，不是你的回合不能亂動別人的技能點
+    if(!p.isHuman || p.skillPoints<10) return;
+    showModal({
+      title:'✨ 發動技能',
+      desc:'選擇要使用的技能效果',
+      buttons:[
+        { label:'傳送回起點', primary:true, onClick:()=>{ p.skillPoints=0; teleportPlayerTo(p,0); refreshStatBar(); announceEvent('✨ '+p.name+' 發動技能：傳送回起點'); } },
+        { label:'蓋房加速卡（施工中的地產-5秒）', onClick:()=>{
+            p.skillPoints=0;
+            const speedups = [];
+            TILE_DATA.forEach(td=>{
+              if(td.building && td.building.buildStartTime!=null){
+                td.building.buildStartTime -= 5000;
+                speedups.push({ index:td.index, buildStartTime: td.building.buildStartTime });
+              }
+            });
+            refreshStatBar();
+            announceEvent('✨ '+p.name+' 發動技能：施工加速 -5 秒');
+            if(speedups.length>0) mpBroadcastInstant({ type:'construction_speedup', speedups });
+          } },
+        { label:'取消', onClick:()=>{} }
+      ]
+    });
+  });
+
+  // ---- AI玩家的簡易棋子（不用完整3D角色模型，先驗證輪流機制本身） ----
+  function createAIToken(player){
+    const anchor = new THREE.Group();
+    scene.add(anchor);
+    anchor.position.set(tilePositions[player.tileIndex].x, 0, tilePositions[player.tileIndex].z);
+    const geo = new THREE.ConeGeometry(0.32, 0.9, 12);
+    const mat = new THREE.MeshStandardMaterial({ color: player.color, roughness:0.5 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.y = 0.45;
+    mesh.castShadow = true;
+    anchor.add(mesh);
+    player.anchor = anchor;
+  }
+
+  let rollBtnRef = null;
+  let modelReady = false;
+
+  function doRollForCurrentPlayer(){
+    if(gameEnded) return;
+    const p = curPlayer();
+    if(MP.enabled && !p.isLocal) return; // 保險：連線模式下，別人的回合不該由我這邊觸發
+    if(MP.enabled) MP.myTurnActive = true; // 這回合的最終結果，最後會由我這台送出同步
+
+    if(p.inJail){
+      p.jailTurnsLeft -= 1;
+      if(p.jailTurnsLeft<=0){ p.inJail = false; announceEvent(p.name+' 刑滿出獄'); }
+      else { announceEvent('⛓ '+p.name+' 監獄中，本回合跳過（剩 '+p.jailTurnsLeft+' 回合）'); }
+      refreshStatBar();
+      setTimeout(endTurn, 500);
+      return;
+    }
+    if(GAME.workers[p.id]){
+      announceEvent('👷 '+p.name+' 打工中，本回合跳過');
+      setTimeout(endTurn, 500);
+      return;
+    }
+    if(rollBtnRef) rollBtnRef.disabled = true;
+
+    function proceedWithValue(value){
+      rollDice((v)=>{
+        announceEvent('🎲 '+p.name+' 擲出 '+v+' 點！');
+        const fromIndex = p.tileIndex;
+        const toIndex = (fromIndex + v) % TOTAL_TILES;
+        checkPassBonus(p, fromIndex, toIndex);
+        refreshStatBar();
+        movePlayerSteps(p, v, ()=>{
+          handleLandOnTile(p.tileIndex, endTurn);
+        });
+      }, value);
+    }
+
+    if(MP.enabled){
+      // 骰子點數由伺服器亂數決定，確保大家看到的點數一致（不能各自本機亂數）
+      MP.socket.emit('request_roll', {}, (res)=>{
+        if(!res || !res.ok){ announceEvent('⚠️ 擲骰請求失敗：'+(res&&res.error||'未知錯誤')); if(rollBtnRef) rollBtnRef.disabled=false; return; }
+        mpBroadcastInstant({ type:'dice_roll_start', actorPlayerId:p.id, value:res.value });
+        proceedWithValue(res.value);
+      });
+    } else {
+      proceedWithValue(undefined);
+    }
+  }
+
+  function nextActivePlayerIdx(fromIdx){
+    let i = fromIdx;
+    for(let step=0; step<PLAYERS.length; step++){
+      i = (i+1) % PLAYERS.length;
+      if(!PLAYERS[i].eliminated) return i;
+    }
+    return fromIdx; // 理論上不會發生（會在只剩1人時就結束遊戲）
+  }
+
+  function endTurn(){
+    if(gameEnded) return;
+    refreshStatBar();
+    const finishedPlayer = curPlayer();
+    if(victoryMode==='bankruptcy' && !finishedPlayer.eliminated && finishedPlayer.money<0){
+      offerRescue(finishedPlayer, 0, proceedEndTurn);
+      return;
+    }
+    proceedEndTurn();
+  }
+
+  function mpFinalizeIfMyTurn(extraGameInfo){
+    if(MP.enabled && MP.myTurnActive){
+      MP.myTurnActive = false;
+      mpBroadcastTurnResult(currentPlayerIdx, extraGameInfo||{});
+    }
+  }
+
+  function proceedEndTurn(){
+    if(gameEnded) return;
+    const prevIdx = currentPlayerIdx;
+    currentPlayerIdx = nextActivePlayerIdx(currentPlayerIdx);
+    if(currentPlayerIdx <= prevIdx){ // 繞回較前面的位置＝完整跑完一輪
+      roundCount++;
+      if(victoryMode==='turns' && roundCount>=TURN_LIMIT){ endGameByScore(); return; }
+    }
+    refreshStatBar();
+
+    if(MP.enabled){
+      if(curPlayer().isLocal){
+        if(GAME.workers[curPlayer().id]){
+          if(rollBtnRef) rollBtnRef.disabled = true;
+          setStatus('你正在打工中，自動跳過…');
+          setTimeout(doRollForCurrentPlayer, 500);
+        } else {
+          if(rollBtnRef) rollBtnRef.disabled = !modelReady;
+          setStatus('輪到你，可以擲骰子（第 '+(roundCount+1)+' 回合）');
+        }
+      } else {
+        if(rollBtnRef) rollBtnRef.disabled = true;
+        setStatus(curPlayer().name+' 的回合…');
+      }
+      mpFinalizeIfMyTurn({});
+      return;
+    }
+
+    if(GAME.workers[curPlayer().id]){
+      // 打工中：不需要任何操作，自動跳過並繼續下一位
+      if(rollBtnRef) rollBtnRef.disabled = true;
+      setStatus(curPlayer().name+' 打工中，自動跳過…');
+      setTimeout(doRollForCurrentPlayer, 500);
+    } else if(curPlayer().isHuman){
+      if(rollBtnRef) rollBtnRef.disabled = !modelReady;
+      setStatus('輪到你，可以擲骰子（第 '+(roundCount+1)+' 回合）');
+    } else {
+      if(rollBtnRef) rollBtnRef.disabled = true;
+      setStatus(curPlayer().name+' 的回合…');
+      setTimeout(doRollForCurrentPlayer, 900);
+    }
+  }
+
+  // ---- 破產急救：資金見底時，可以變賣財產或緊急打工，都不行才淘汰 ----
+  function sellCheapestProperty(p){
+    if(p.properties.length===0) return 0;
+    let bestIdx=-1, bestVal=Infinity;
+    p.properties.forEach(idx=>{
+      const td = TILE_DATA[idx];
+      const val = td.price*(1+td.building.level*0.25);
+      if(val<bestVal){ bestVal=val; bestIdx=idx; }
+    });
+    const td = TILE_DATA[bestIdx];
+    const refund = Math.round(bestVal*0.5);
+    p.money += refund;
+    p.properties = p.properties.filter(i=>i!==bestIdx);
+    td.owner = null;
+    td.building.level = 0;
+    td.building.buildStartTime = null;
+    if(ownerRings[bestIdx]) ownerRings[bestIdx].visible = false;
+    updateBuildingVisual(bestIdx);
+    refreshTileLabel(bestIdx);
+    announceEvent('💼 '+p.name+' 變賣「'+td.name+'」，回收 '+fmtMoney(refund)+' 元');
+    refreshStatBar();
+    return refund;
+  }
+
+  const eliminationLog = [];
+  function eliminatePlayer(p){
+    p.eliminated = true;
+    if(p.anchor) p.anchor.visible = false;
+    const reasonText = p.lastLossReason ? '（起因：'+p.lastLossReason+'）' : '';
+    eliminationLog.push(p.name+' 破產淘汰 '+reasonText);
+    announceEvent('💀 '+p.name+' 資金無法挽救，宣告破產淘汰！'+reasonText);
+    refreshStatBar();
+  }
+
+  function offerRescue(p, attemptCount, onDone){
+    if(p.money>=0){ onDone(); return; }
+    const AI_RESCUE_CAP = 15; // 避免AI負債過大時無限迴圈打工
+    const canSell = p.properties.length>0;
+
+    if(!p.isHuman){
+      if(attemptCount>=AI_RESCUE_CAP){ eliminatePlayer(p); checkGameEndAfterElimination(onDone); return; }
+      setTimeout(()=>{
+        if(canSell){ sellCheapestProperty(p); }
+        else { p.money += 1500; announceEvent('👷 '+p.name+' 緊急打工，獲得 1500 元'); refreshStatBar(); }
+        offerRescue(p, attemptCount+1, onDone);
+      }, 500);
+      return;
+    }
+
+    const reasonLine = p.lastLossReason ? ('\n原因：'+p.lastLossReason) : '';
+    const buttons = [];
+    if(canSell){
+      buttons.push({ label:'💼 變賣一筆地產（約回收半價）', primary:true, onClick:()=>{
+        sellCheapestProperty(p);
+        offerRescue(p, attemptCount+1, onDone);
+      }});
+    }
+    buttons.push({ label:'👷 緊急打工（+1500元）', onClick:()=>{
+      p.money += 1500; announceEvent('👷 '+p.name+' 緊急打工，獲得 1500 元'); refreshStatBar();
+      offerRescue(p, attemptCount+1, onDone);
+    }});
+    buttons.push({ label:'💀 放棄，宣告破產', onClick:()=>{
+      eliminatePlayer(p);
+      checkGameEndAfterElimination(onDone);
+    }});
+
+    showModal({
+      title: '💸 資金見底！目前 '+fmtMoney(p.money)+' 元',
+      desc: '需要補足資金才能繼續遊戲。'+reasonLine,
+      buttons
+    });
+  }
+
+  function checkGameEndAfterElimination(onDone){
+    const active = PLAYERS.filter(pl=>!pl.eliminated);
+    if(active.length<=1){
+      endGameByLastStanding(active[0] || null);
+    } else {
+      onDone();
+    }
+  }
+
+  function propertyValue(p){
+    let total = p.money;
+    p.properties.forEach(idx=>{
+      const td = TILE_DATA[idx];
+      total += Math.round(td.price * (1 + td.building.level*0.25));
+    });
+    return total;
+  }
+
+  function endGameByLastStanding(winner){
+    gameEnded = true;
+    if(rollBtnRef) rollBtnRef.disabled = true;
+    const logText = eliminationLog.length ? ('\n\n過程：\n'+eliminationLog.join('\n')) : '';
+    showModal({
+      title: winner ? '🏆 遊戲結束' : '遊戲結束',
+      desc: (winner ? (winner.name+' 是最後存活的玩家，獲勝！') : '所有玩家皆已淘汰。') + logText,
+      buttons: endGameButtons()
+    });
+    announceEvent(winner ? '🏆 '+winner.name+' 獲勝！（破產淘汰制）' : '遊戲結束');
+    mpFinalizeIfMyTurn({ gameEnded:true, endMode:'elimination', winnerId: winner ? winner.id : null });
+  }
+
+  function endGameButtons(){
+    return [
+      { label:'🔄 重新開始（回設定畫面）', primary:true, onClick:()=>{
+          sessionStorage.setItem('skipTitleOnce','1');
+          location.reload();
+        } },
+      { label:'🏁 結束遊戲（回開場畫面）', onClick:()=>{
+          location.reload();
+        } }
+    ];
+  }
+
+  function endGameByScore(){
+    gameEnded = true;
+    if(rollBtnRef) rollBtnRef.disabled = true;
+    const ranked = PLAYERS.filter(p=>!p.eliminated).map(p=>({p, score:propertyValue(p)})).sort((a,b)=>b.score-a.score);
+    const lines = ranked.map((r,i)=>(i+1)+'. '+r.p.name+'：'+fmtMoney(r.score)+' 元').join('\n');
+    showModal({
+      title:'🏆 回合結束（第 '+TURN_LIMIT+' 回合）',
+      desc: '總資產排名（現金+地產）：\n'+lines,
+      buttons: endGameButtons()
+    });
+    announceEvent('🏆 '+(ranked[0]? ranked[0].p.name : '')+' 資產最高，獲勝！（回合積分制）');
+    mpFinalizeIfMyTurn({ gameEnded:true, endMode:'score' });
+  }
+  // ---- 設定畫面 與 模型載入 的合流：兩個條件都完成才真正開始遊戲 ----
+  let pendingModelData = null;
+  let pendingLobbyConfig = null;
+
+  function tryStartGame(){
+    if(!pendingModelData || !pendingLobbyConfig || PLAYERS.length>0) return;
+
+    victoryMode = pendingLobbyConfig.rule;
+
+    if(pendingLobbyConfig.mp){
+      // ---- 連線多人模式：座位順序來自伺服器，全部都是真人 ----
+      PLAYERS = buildPlayersMP(pendingLobbyConfig.seatOrder);
+      currentPlayerIdx = pendingLobbyConfig.startSeatIdx || 0;
+      const myIdx = PLAYERS.findIndex(p=>p.isLocal);
+
+      charAnchor.add(pendingModelData.rootObj);
+      character = {
+        rootObj: pendingModelData.rootObj, clips: pendingModelData.clips,
+        bindPose: pendingModelData.bindPose, nodeObjects: pendingModelData.nodeObjects,
+        currentClip:null, clipStart:0, tileIndex: myIdx>=0 ? PLAYERS[myIdx].tileIndex : 5
+      };
+      if(myIdx>=0){
+        charAnchor.position.set(tilePositions[PLAYERS[myIdx].tileIndex].x, 0, tilePositions[PLAYERS[myIdx].tileIndex].z);
+        PLAYERS[myIdx].anchor = charAnchor;
+        PLAYERS[myIdx].characterRef = character;
+      }
+      PLAYERS.forEach((p,i)=>{ if(i!==myIdx) attachRealCharacterToken(p, p.charId); });
+
+      modelReady = true;
+      refreshStatBar();
+      const myTurn = PLAYERS[currentPlayerIdx] && PLAYERS[currentPlayerIdx].isLocal;
+      if(rollBtnRef) rollBtnRef.disabled = !myTurn;
+      setStatus(myTurn ? '遊戲開始！輪到你，可以擲骰子' : (PLAYERS[currentPlayerIdx].name+' 的回合…'));
+      animate();
+      return;
+    }
+
+    PLAYERS = buildPlayers(pendingLobbyConfig.aiCount);
+
+    charAnchor.add(pendingModelData.rootObj);
+    character = {
+      rootObj: pendingModelData.rootObj, clips: pendingModelData.clips,
+      bindPose: pendingModelData.bindPose, nodeObjects: pendingModelData.nodeObjects,
+      currentClip:null, clipStart:0, tileIndex: PLAYERS[0].tileIndex
+    };
+    PLAYERS[0].anchor = charAnchor;
+    PLAYERS[0].characterRef = character;
+    for(let i=1;i<PLAYERS.length;i++){ createAIToken(PLAYERS[i]); }
+
+    modelReady = true;
+    refreshStatBar();
+    if(rollBtnRef) rollBtnRef.disabled = false;
+    setStatus('遊戲開始！輪到你，可以擲骰子');
+    animate();
+  }
+
+  // 點角色/AI棋子：運鏡聚焦（通用支援任意數量玩家）
+  renderer.domElement.addEventListener('click', (e)=>{
+    if(dragMoved){ dragMoved = false; return; } // 剛剛是拖曳放開，不是真的點擊，不觸發聚焦/歸位
+    if(PLAYERS.length===0) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const mouse = new THREE.Vector2(
+      ((e.clientX-rect.left)/rect.width)*2-1,
+      -((e.clientY-rect.top)/rect.height)*2+1
+    );
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, camera);
+    let focused = false;
+    for(const p of PLAYERS){
+      if(!p.anchor) continue;
+      const hits = raycaster.intersectObject(p.anchor, true);
+      if(hits.length>0){
+        const worldPos = new THREE.Vector3();
+        p.anchor.getWorldPosition(worldPos);
+        worldPos.y += 0.9;
+        focusOn(worldPos, 3.2);
+        focused = true;
+        break;
+      }
+    }
+    if(!focused){ focusOn(new THREE.Vector3(0,1,0), 12); }
+  });
+
+  const rollBtn = document.createElement('button');
+  rollBtn.textContent = '🎲 擲骰子';
+  rollBtn.disabled = true;
+  rollBtn.addEventListener('click', ()=>{
+    if(PLAYERS.length===0 || !curPlayer().isHuman) return;
+    doRollForCurrentPlayer();
+  });
+  controlsEl.appendChild(rollBtn);
+  rollBtnRef = rollBtn;
+
+  const workBtn = document.createElement('button');
+  workBtn.textContent = '🏪 打工';
+  workBtn.disabled = true;
+  workBtn.addEventListener('click', ()=>{
+    if(PLAYERS.length===0) return;
+    const p = curPlayer();
+    if(MP.enabled && !p.isLocal) return; // 連線模式下，不是你的回合不能幫別人打工
+    if(!p.isHuman || p.inJail || GAME.workers[p.id]) return;
+    openWorkModal(p);
+  });
+  controlsEl.appendChild(workBtn);
+  const workBtnRef = workBtn;
+
+  const workStopBtn = document.createElement('button');
+  workStopBtn.textContent = '🏃 結束打工';
+  workStopBtn.style.display = 'none';
+  workStopBtn.addEventListener('click', ()=>{
+    if(PLAYERS.length===0) return;
+    const human = MP.enabled ? PLAYERS.find(pl=>pl.isLocal) : PLAYERS.find(pl=>pl.isHuman);
+    if(human && GAME.workers[human.id]){ finishWorking(human, true); }
+  });
+  controlsEl.appendChild(workStopBtn);
+
+  const workModalOverlayEl = document.getElementById('workModalOverlay');
+  const workDurationSlider = document.getElementById('workDurationSlider');
+  const workDurationLabel = document.getElementById('workDurationLabel');
+  const workMoneyEstEl = document.getElementById('workMoneyEst');
+  const workTurnEstEl = document.getElementById('workTurnEst');
+  const workConfirmBtn = document.getElementById('workConfirmBtn');
+  const workCancelBtn = document.getElementById('workCancelBtn');
+  const AVG_TURN_SECONDS = 12; // 粗估：換算「約跳過幾回合」用，實際回合長短會依情況不同
+
+  function refreshWorkEstimate(){
+    const minutes = parseInt(workDurationSlider.value, 10);
+    workDurationLabel.textContent = minutes + ' 分鐘';
+    workMoneyEstEl.textContent = fmtMoney(minutes*WORK_RATE_PER_MIN);
+    const turns = Math.max(1, Math.round(minutes*60/AVG_TURN_SECONDS));
+    workTurnEstEl.textContent = '約 '+turns;
+  }
+  workDurationSlider.addEventListener('input', refreshWorkEstimate);
+
+  let workModalTargetPlayer = null;
+  function openWorkModal(p){
+    workModalTargetPlayer = p;
+    refreshWorkEstimate();
+    workModalOverlayEl.classList.add('show');
+  }
+  workCancelBtn.addEventListener('click', ()=>{
+    workModalOverlayEl.classList.remove('show');
+  });
+  workConfirmBtn.addEventListener('click', ()=>{
+    workModalOverlayEl.classList.remove('show');
+    if(!workModalTargetPlayer) return;
+    const minutes = parseInt(workDurationSlider.value, 10);
+    startWorking(workModalTargetPlayer, minutes);
+    endTurn();
+  });
+
+  // ---- 設定畫面互動 ----
+  // ---- 開場畫面 ----
+  const titleOverlayEl = document.getElementById('titleOverlay');
+  const enterGameBtn = document.getElementById('enterGameBtn');
+  const lobbyOverlayEl = document.getElementById('lobbyOverlay');
+
+  function showLobby(){
+    titleOverlayEl.style.display = 'none';
+    lobbyOverlayEl.classList.add('show');
+  }
+  enterGameBtn.addEventListener('click', showMpLobby);
+
+  if(sessionStorage.getItem('skipTitleOnce')==='1'){
+    sessionStorage.removeItem('skipTitleOnce');
+    showLobby();
+  }
+
+  const lobbyStartBtn = document.getElementById('lobbyStartBtn');
+  let lobbySelectedRule = null;
+  let lobbySelectedAiCount = null;
+
+  function checkLobbyReady(){
+    lobbyStartBtn.disabled = !(lobbySelectedRule && lobbySelectedAiCount);
+  }
+  document.querySelectorAll('#ruleOptions .lobbyOptionCard').forEach(card=>{
+    card.addEventListener('click', ()=>{
+      document.querySelectorAll('#ruleOptions .lobbyOptionCard').forEach(c=>c.classList.remove('selected'));
+      card.classList.add('selected');
+      lobbySelectedRule = card.dataset.value;
+      checkLobbyReady();
+    });
+  });
+  document.querySelectorAll('#aiCountOptions .lobbyOptionCard').forEach(card=>{
+    card.addEventListener('click', ()=>{
+      document.querySelectorAll('#aiCountOptions .lobbyOptionCard').forEach(c=>c.classList.remove('selected'));
+      card.classList.add('selected');
+      lobbySelectedAiCount = parseInt(card.dataset.value, 10);
+      checkLobbyReady();
+    });
+  });
+  lobbyStartBtn.addEventListener('click', ()=>{
+    lobbyOverlayEl.classList.remove('show');
+    pendingLobbyConfig = { rule: lobbySelectedRule, aiCount: lobbySelectedAiCount };
+    tryStartGame();
+  });
+
+  // ================= 連線多人模式（第一階段：擲骰/回合順序/落地結果 同步）=================
+  const MP = {
+    enabled:false, socket:null, myId:null, myToken:null, myName:'', roomCode:null, isHost:false,
+    seatOrder:null, rule:'bankruptcy'
+  };
+  let pendingMinigameOnDone = null;
+
+  const mpLobbyOverlayEl = document.getElementById('mpLobbyOverlay');
+  const mpConnectSectionEl = document.getElementById('mpConnectSection');
+  const mpRoomSectionEl = document.getElementById('mpRoomSection');
+  const mpServerUrlEl = document.getElementById('mpServerUrl');
+  const mpNameInputEl = document.getElementById('mpNameInput');
+  const mpCreateBtnEl = document.getElementById('mpCreateBtn');
+  const mpJoinBtnEl = document.getElementById('mpJoinBtn');
+  const mpJoinCodeInputEl = document.getElementById('mpJoinCodeInput');
+  const mpConnStatusEl = document.getElementById('mpConnStatus');
+  const mpRoomCodeDisplayEl = document.getElementById('mpRoomCodeDisplay');
+  const mpPlayerListBoxEl = document.getElementById('mpPlayerListBox');
+  const mpRuleSectionEl = document.getElementById('mpRuleSection');
+  const mpStartBtnEl = document.getElementById('mpStartBtn');
+  const mpWaitingNoteEl = document.getElementById('mpWaitingNote');
+  const mpSubTextEl = document.getElementById('mpSubText');
+
+  function showMpLobby(){
+    titleOverlayEl.style.display = 'none';
+    mpLobbyOverlayEl.classList.add('show');
+  }
+
+  function mpSetStatus(msg){ mpConnStatusEl.textContent = msg; }
+
+  function mpConnectSocket(){
+    const url = mpServerUrl_current();
+    if(MP.socket) return; // 已連線過
+    mpSetStatus('連線中…');
+    MP.socket = io(url, { transports:['websocket','polling'] });
+    MP.socket.on('connect', ()=>{ MP.myId = MP.socket.id; mpSetStatus('已連線到伺服器 ✓'); });
+    MP.socket.on('connect_error', (err)=>{ mpSetStatus('連線失敗：'+(err.message||'請確認伺服器網址')); });
+    MP.socket.on('disconnect', ()=>{ mpSetStatus('與伺服器斷線'); });
+    MP.socket.on('room_state', (state)=>{ mpRenderPlayerList(state); });
+    MP.socket.on('mp_game_start', (payload)=>{ mpOnGameStart(payload); });
+    MP.socket.on('state_sync', (payload)=>{ mpApplyRemoteSnapshot(payload); });
+    MP.socket.on('instant_action', (action)=>{ mpApplyInstantAction(action); });
+    MP.socket.on('minigame_triggered', (payload)=>{ mpShowMinigameOverlay(payload); });
+    MP.socket.on('minigame_result', (payload)=>{ mpHideMinigameOverlay(payload); });
+    MP.socket.on('mp_player_left', ()=>{ if(typeof announceEvent==='function') announceEvent('⚠️ 有一位玩家斷線了'); });
+  }
+  function mpServerUrl_current(){
+    let v = (mpServerUrlEl.value||'').trim();
+    if(v.endsWith('/')) v = v.slice(0,-1);
+    return v;
+  }
+
+  mpCreateBtnEl.addEventListener('click', ()=>{
+    mpConnectSocket();
+    MP.myName = (mpNameInputEl.value||'玩家').slice(0,12);
+    const tryEmit = ()=>{
+      if(!MP.socket.connected){ setTimeout(tryEmit, 300); return; }
+      MP.socket.emit('create_room', { playerName: MP.myName, playerToken: MP.myToken }, (res)=>{
+        if(!res.ok){ mpSetStatus('建立失敗：'+res.error); return; }
+        MP.roomCode = res.roomCode;
+        MP.myToken = res.playerToken;
+        MP.isHost = true;
+        mpEnterRoomView(res.state);
+      });
+    };
+    tryEmit();
+  });
+
+  mpJoinBtnEl.addEventListener('click', ()=>{
+    if(mpJoinCodeInputEl.style.display==='none'){
+      mpJoinCodeInputEl.style.display = 'block';
+      mpJoinCodeInputEl.focus();
+      return;
+    }
+    mpConnectSocket();
+    MP.myName = (mpNameInputEl.value||'玩家').slice(0,12);
+    const code = mpJoinCodeInputEl.value.toUpperCase().trim();
+    if(!code){ mpSetStatus('請輸入房間代碼'); return; }
+    const tryEmit = ()=>{
+      if(!MP.socket.connected){ setTimeout(tryEmit, 300); return; }
+      MP.socket.emit('join_room', { roomCode:code, playerName:MP.myName, playerToken: MP.myToken }, (res)=>{
+        if(!res.ok){ mpSetStatus('加入失敗：'+res.error); return; }
+        MP.roomCode = res.roomCode;
+        MP.myToken = res.playerToken;
+        MP.isHost = false;
+        mpEnterRoomView(res.state);
+      });
+    };
+    tryEmit();
+  });
+
+
+  function mpEnterRoomView(state){
+    mpConnectSectionEl.style.display = 'none';
+    mpRoomSectionEl.style.display = 'block';
+    mpSubTextEl.textContent = '把房間代碼傳給朋友，等大家都進來再開始';
+    mpRoomCodeDisplayEl.textContent = MP.roomCode;
+    mpRenderPlayerList(state);
+  }
+
+  function mpCharEmoji(charId){
+    const c = CHAR_DATA.find(x=>x.id===charId);
+    return c ? c.emoji : '❔';
+  }
+  function mpRenderPlayerList(state){
+    if(!MP.roomCode) return; // 還沒進房間前的room_state不理會
+    mpPlayerListBoxEl.innerHTML = '';
+    (state.players||[]).forEach(p=>{
+      const row = document.createElement('div');
+      row.className = 'mpPlayerRow';
+      row.innerHTML = '<span>'+mpCharEmoji(p.characterId)+' '+(p.isHost?'👑 ':'')+p.name+(p.id===MP.myId?'（你）':'')+(p.characterId?'':' - 尚未選角色')+'</span>';
+      mpPlayerListBoxEl.appendChild(row);
+    });
+    const me = (state.players||[]).find(p=>p.id===MP.myId);
+    MP.isHost = !!(me && me.isHost);
+    const enoughPlayers = (state.players||[]).length >= 2;
+    if(MP.isHost){
+      mpRuleSectionEl.style.display = 'block';
+      mpStartBtnEl.style.display = 'block';
+      mpWaitingNoteEl.style.display = 'none';
+      mpStartBtnEl.disabled = !enoughPlayers;
+      mpStartBtnEl.textContent = enoughPlayers ? '🚀 開始連線對戰' : '開始連線對戰（至少2人）';
+    } else {
+      mpRuleSectionEl.style.display = 'none';
+      mpStartBtnEl.style.display = 'none';
+      mpWaitingNoteEl.style.display = 'block';
+    }
+  }
+
+  // ---- 選角色（在等待房間裡就能選，其他人會即時看到你選了誰）----
+  let mpMyCharId = null;
+  document.querySelectorAll('#mpCharOptions .lobbyOptionCard').forEach(card=>{
+    card.addEventListener('click', ()=>{
+      document.querySelectorAll('#mpCharOptions .lobbyOptionCard').forEach(c=>c.classList.remove('selected'));
+      card.classList.add('selected');
+      mpMyCharId = card.dataset.value;
+      loadSelectedCharacterModel(mpMyCharId); // 先在背景把自己的模型載好，等開戰時就是現成的
+      MP.socket.emit('pick_character', { characterId: mpMyCharId }, (res)=>{
+        if(!res || !res.ok) mpSetStatus('選擇角色失敗：'+((res&&res.error)||'請再試一次'));
+      });
+    });
+  });
+
+  document.querySelectorAll('#mpRuleOptions .lobbyOptionCard').forEach(card=>{
+    card.addEventListener('click', ()=>{
+      document.querySelectorAll('#mpRuleOptions .lobbyOptionCard').forEach(c=>c.classList.remove('selected'));
+      card.classList.add('selected');
+      MP.rule = card.dataset.value;
+    });
+  });
+
+  mpStartBtnEl.addEventListener('click', ()=>{
+    if(!mpMyCharId){ mpSetStatus('請先選一個角色再開始！'); return; }
+    MP.socket.emit('start_monopoly_game', { rule: MP.rule }, (res)=>{
+      if(!res.ok){ mpSetStatus('開始失敗：'+res.error); }
+    });
+  });
+
+  function mpOnGameStart(payload){
+    if(PLAYERS.length>0) return; // 避免重複觸發
+    MP.enabled = true;
+    MP.seatOrder = payload.seatOrder;
+    mpLobbyOverlayEl.classList.remove('show');
+    pendingLobbyConfig = { mp:true, rule: payload.rule, seatOrder: payload.seatOrder, startSeatIdx: payload.startSeatIdx };
+    victoryMode = payload.rule;
+    tryStartGame();
+  }
+
+  // ---- 遠端玩家回合結果套用（把發起回合的玩家跑完整局後送來的最終狀態，套用到自己畫面上）----
+  function mpApplyRemoteSnapshot(payload){
+    if(!MP.enabled || !payload || !payload.snapshot) return;
+    const snap = payload.snapshot;
+
+    // 套用每位玩家的數值狀態
+    (snap.players||[]).forEach(sp=>{
+      const p = PLAYERS.find(pl=>pl.id===sp.id);
+      if(!p) return;
+      p.money = sp.money; p.skillPoints = sp.skillPoints; p.properties = sp.properties.slice();
+      p.inJail = sp.inJail; p.jailTurnsLeft = sp.jailTurnsLeft; p.eliminated = sp.eliminated;
+      const moved = p.tileIndex !== sp.tileIndex;
+      p.tileIndex = sp.tileIndex;
+      if(p.anchor && moved && !p.isLocal){
+        p.anchor.position.set(tilePositions[sp.tileIndex].x, 0, tilePositions[sp.tileIndex].z);
+      } else if(p.anchor && moved && p.isLocal && p.characterRef){
+        // 保險：本地玩家理論上早已因為自己執行過回合而位置正確，這裡只是防呆同步
+        p.anchor.position.set(tilePositions[sp.tileIndex].x, 0, tilePositions[sp.tileIndex].z);
+      }
+      if(sp.eliminated && p.anchor) p.anchor.visible = false;
+    });
+
+    // 套用地產（擁有者/建造樓層）狀態
+    (snap.tiles||[]).forEach(st=>{
+      const td = TILE_DATA[st.index];
+      if(!td || td.type!=='property') return;
+      const ownerChanged = td.owner !== st.owner;
+      td.owner = st.owner;
+      td.building.level = st.level;
+      td.building.buildStartTime = st.buildStartTime;
+      td.building.buildDuration = st.buildDuration;
+      td.building.pendingLevel = st.pendingLevel;
+      if(ownerChanged){
+        const ownerP = PLAYERS.find(pl=>pl.id===st.owner);
+        if(ownerP) markPropertyOwned(st.index, ownerP.color);
+      }
+      updateBuildingVisual(st.index);
+      refreshTileLabel(st.index);
+    });
+
+    // 套用全域遊戲狀態
+    roundCount = snap.game.roundCount;
+    GAME.pool.total = snap.game.poolTotal;
+    currentPlayerIdx = payload.currentTurnSeatIdx;
+    refreshStatBar();
+
+    if(snap.game.gameEnded && !gameEnded){
+      gameEnded = true;
+      if(rollBtnRef) rollBtnRef.disabled = true;
+      if(snap.game.endMode==='score'){ endGameByScore(); }
+      else { const winner = PLAYERS.find(pl=>pl.id===snap.game.winnerId) || null; endGameByLastStanding(winner); }
+      return;
+    }
+
+    const myTurn = PLAYERS[currentPlayerIdx] && PLAYERS[currentPlayerIdx].isLocal;
+    if(myTurn){
+      if(rollBtnRef) rollBtnRef.disabled = !modelReady;
+      setStatus('輪到你，可以擲骰子（第 '+(roundCount+1)+' 回合）');
+    } else {
+      if(rollBtnRef) rollBtnRef.disabled = true;
+      const seat = PLAYERS[currentPlayerIdx];
+      setStatus((seat?seat.name:'對方')+' 的回合…');
+    }
+  }
+
+  // ---- 即時廣播（不用等回合結束）：目前只用在「開始施工」「施工加速」這類background事件 ----
+  function mpBroadcastInstant(action){
+    if(!MP.enabled) return;
+    MP.socket.emit('instant_action', action);
+  }
+  function mpApplyInstantAction(action){
+    if(!MP.enabled || !action) return;
+    if(action.type==='construction_start'){
+      const td = TILE_DATA[action.index];
+      if(!td) return;
+      td.building.buildStartTime = action.buildStartTime;
+      td.building.buildDuration = action.buildDuration;
+      td.building.pendingLevel = action.pendingLevel;
+    } else if(action.type==='construction_speedup'){
+      (action.speedups||[]).forEach(s=>{
+        const td = TILE_DATA[s.index];
+        if(td && td.building) td.building.buildStartTime = s.buildStartTime;
+      });
+    } else if(action.type==='work_start'){
+      const p = PLAYERS.find(pl=>pl.id===action.playerId);
+      if(!p) return;
+      GAME.workers[p.id] = { player:p, startTime:action.startTime, durationMinutes:action.durationMinutes };
+      if(p.anchor) p.anchor.visible = false;
+      updateWorkPanel();
+      refreshStatBar();
+    } else if(action.type==='work_finish_early'){
+      const w = GAME.workers[action.playerId];
+      if(!w) return;
+      delete GAME.workers[action.playerId];
+      if(w.player.anchor) w.player.anchor.visible = true;
+      updateWorkPanel();
+      refreshStatBar();
+    } else if(action.type==='dice_roll_start'){
+      // 別人正在擲骰/走格：本地也播放同樣的視覺動畫，讓旁觀者即時看到過程(最終正確狀態仍以後續state_sync為準)
+      const p = PLAYERS.find(pl=>pl.id===action.actorPlayerId);
+      if(!p || p.isLocal) return;
+      rollDice(()=>{
+        movePlayerSteps(p, action.value, ()=>{});
+      }, action.value);
+    }
+  }
+
+  // ---- 觸發式小遊戲（買地/被踩地/蓋房時，強制全房間一起玩，觸發的人要贏才算成功）----
+  // 建立/更新內嵌小遊戲的彈出視窗
+  function mpGetMinigameOverlay(){
+    let ov = document.getElementById('mpMinigameOverlay');
+    if(!ov){
+      ov = document.createElement('div');
+      ov.id = 'mpMinigameOverlay';
+      ov.style.cssText = 'position:fixed; inset:0; z-index:500; background:rgba(0,0,0,0.6); display:none; align-items:center; justify-content:center; flex-direction:column;';
+
+      const rotateHint = document.createElement('div');
+      rotateHint.id = 'mpMinigameRotateHint';
+      rotateHint.style.cssText = 'display:none; flex-direction:column; align-items:center; justify-content:center; color:#fff; text-align:center; padding:20px;';
+      rotateHint.innerHTML =
+        '<div style="font-size:52px; animation:mpRotateSpin 1.4s ease-in-out infinite;">📱</div>'+
+        '<div style="font-weight:800; font-size:16px; margin-top:12px;">小遊戲請將手機轉為直式</div>'+
+        '<div style="font-size:12px; color:#ddd; margin-top:6px;">轉回直式後畫面會自動顯示</div>';
+      if(!document.getElementById('mpRotateSpinKeyframe')){
+        const styleTag = document.createElement('style');
+        styleTag.id = 'mpRotateSpinKeyframe';
+        styleTag.textContent = '@keyframes mpRotateSpin{0%,100%{transform:rotate(0deg);}50%{transform:rotate(90deg);}}';
+        document.head.appendChild(styleTag);
+      }
+      ov.appendChild(rotateHint);
+
+      const frame = document.createElement('iframe');
+      frame.id = 'mpMinigameFrame';
+      frame.style.cssText = 'width:min(480px,96vw); height:min(840px,94vh); border:none; border-radius:22px; box-shadow:0 20px 60px rgba(0,0,0,0.5); background:#fff;';
+      ov.appendChild(frame);
+      document.body.appendChild(ov);
+
+      // 觸發小遊戲期間，只要偵測到是「手機尺寸 + 橫式」，就先擋住遊戲畫面、顯示轉向提示
+      function updateMinigameOrientationGate(){
+        if(ov.style.display==='none') return;
+        const isMobileLandscape = window.matchMedia('(orientation: landscape) and (max-height: 500px)').matches;
+        document.getElementById('mpMinigameRotateHint').style.display = isMobileLandscape ? 'flex' : 'none';
+        document.getElementById('mpMinigameFrame').style.display = isMobileLandscape ? 'none' : 'block';
+      }
+      window.addEventListener('resize', updateMinigameOrientationGate);
+      window.addEventListener('orientationchange', ()=>setTimeout(updateMinigameOrientationGate,200));
+      ov.__updateOrientationGate = updateMinigameOrientationGate;
+    }
+    return ov;
+  }
+  function mpShowMinigameOverlay(payload){
+    const ov = mpGetMinigameOverlay();
+    const frame = document.getElementById('mpMinigameFrame');
+    const serverUrl = mpServerUrl_current();
+    const src = serverUrl+'/games/'+payload.gameId+'.html'
+      +'?room='+encodeURIComponent(MP.roomCode)
+      +'&token='+encodeURIComponent(MP.myToken)
+      +'&reason='+encodeURIComponent(payload.reason||'');
+    frame.src = src;
+    ov.style.display = 'flex';
+    if(ov.__updateOrientationGate) ov.__updateOrientationGate();
+    announceEvent('🎮 觸發小遊戲！'+(payload.triggerName?payload.triggerName+' ':'')+'的關卡，大家一起上場！');
+  }
+  function mpHideMinigameOverlay(payload){
+    announceEvent(payload.success
+      ? '🎉 '+(payload.winnerName||'觸發者')+' 贏了小遊戲，關卡成功！'
+      : '😢 '+(payload.winnerName||'其他人')+' 贏了小遊戲，觸發者這次沒能成功');
+    // 延遲一點點再關閉視窗，讓大家能先看到小遊戲畫面裡的「賓果/獲勝」動畫
+    setTimeout(()=>{
+      const ov = document.getElementById('mpMinigameOverlay');
+      if(ov){ ov.style.display = 'none'; const f=document.getElementById('mpMinigameFrame'); if(f) f.src='about:blank'; }
+    }, 1600);
+    if(pendingMinigameOnDone){
+      const fn = pendingMinigameOnDone;
+      pendingMinigameOnDone = null;
+      fn(payload.success);
+    }
+  }
+  // 取代原本 minigameOrAuto：連線模式下觸發全房間強制參加的小遊戲；單機模式維持原本的佔位小遊戲
+  function triggerForcedMinigame(reason, tileIndex, title, desc, onDone){
+    if(!MP.enabled){
+      minigameOrAuto(title, desc, onDone); // 單機模式：維持原本「人類走互動流程、AI自動判定」的邏輯
+      return;
+    }
+    pendingMinigameOnDone = onDone;
+    MP.socket.emit('trigger_minigame', { reason, tileIndex }, (res)=>{
+      if(!res || !res.ok){
+        announceEvent('⚠️ 小遊戲觸發失敗，視為挑戰失敗');
+        pendingMinigameOnDone = null;
+        onDone(false);
+      }
+    });
+  }
+
+  // ---- 本地玩家跑完自己的回合後，把最終狀態打包送給伺服器轉發給其他人 ----
+  function mpBroadcastTurnResult(nextSeatIdx, extraGameInfo){
+    if(!MP.enabled) return;
+    const snapshot = {
+      players: PLAYERS.map(p=>({
+        id:p.id, money:p.money, skillPoints:p.skillPoints, properties:p.properties.slice(),
+        inJail:p.inJail, jailTurnsLeft:p.jailTurnsLeft, eliminated:p.eliminated, tileIndex:p.tileIndex
+      })),
+      tiles: TILE_DATA.filter(td=>td.type==='property').map(td=>({
+        index:td.index, owner:td.owner, level:td.building.level,
+        buildStartTime:td.building.buildStartTime, buildDuration:td.building.buildDuration, pendingLevel:td.building.pendingLevel
+      })),
+      game: Object.assign({ roundCount, poolTotal:GAME.pool.total, gameEnded }, extraGameInfo||{})
+    };
+    MP.socket.emit('state_sync', { snapshot, nextSeatIdx });
+  }
+  // ================= 遊戲邏輯結束 =================
+
+
+
+  // ---- 攝影機控制（真實3D攝影機，直接lerp position/target，不需CSS矩陣） ----
+  let camTarget = new THREE.Vector3(0,1,0);
+  let camDesiredTarget = camTarget.clone();
+  let camDist = 24, camDesiredDist = 24;
+  let camElev = 0.85, camAzim = 0.7;
+  let transitioning = false;
+
+  function computeCamPos(target, dist, elev, azim){
+    return new THREE.Vector3(
+      target.x + dist*Math.cos(elev)*Math.sin(azim),
+      target.y + dist*Math.sin(elev),
+      target.z + dist*Math.cos(elev)*Math.cos(azim)
+    );
+  }
+  function applyCamera(){
+    const pos = computeCamPos(camTarget, camDist, camElev, camAzim);
+    camera.position.copy(pos);
+    camera.lookAt(camTarget);
+  }
+  applyCamera();
+
+  function focusOn(targetVec3, dist){
+    camDesiredTarget = targetVec3.clone();
+    camDesiredDist = dist;
+    transitioning = true;
+  }
+
+  // ---- 載入角色 ----
+  let character = null;
+  let charAnchor = new THREE.Group();
+  scene.add(charAnchor);
+  charAnchor.position.set(tilePositions[5].x, 0, tilePositions[5].z);
+
+  // ================= 3D 骰子 =================
+  function makeDiceFaceTexture(pipCount){
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#f7f3ea';
+    ctx.fillRect(0,0,size,size);
+    ctx.strokeStyle = '#c9c2ad';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(3,3,size-6,size-6);
+    ctx.fillStyle = '#000000';
+    const r = size*0.09;
+    const positions = {
+      1: [[0.5,0.5]],
+      2: [[0.28,0.28],[0.72,0.72]],
+      3: [[0.28,0.28],[0.5,0.5],[0.72,0.72]],
+      4: [[0.28,0.28],[0.72,0.28],[0.28,0.72],[0.72,0.72]],
+      5: [[0.28,0.28],[0.72,0.28],[0.5,0.5],[0.28,0.72],[0.72,0.72]],
+      6: [[0.28,0.25],[0.72,0.25],[0.28,0.5],[0.72,0.5],[0.28,0.75],[0.72,0.75]]
+    }[pipCount];
+    positions.forEach(([px,py])=>{
+      ctx.beginPath();
+      ctx.arc(px*size, py*size, r, 0, Math.PI*2);
+      ctx.fill();
+    });
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  // 標準骰子：對面點數和為7。面順序對應 BoxGeometry materialIndex: [+X,-X,+Y,-Y,+Z,-Z]
+  const DICE_FACE_VALUE = [1,6,2,5,3,4];
+  const DICE_FACE_NORMAL = [
+    new THREE.Vector3(1,0,0), new THREE.Vector3(-1,0,0),
+    new THREE.Vector3(0,1,0), new THREE.Vector3(0,-1,0),
+    new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,-1)
+  ];
+  const diceMaterials = DICE_FACE_VALUE.map(v=>new THREE.MeshStandardMaterial({ map: makeDiceFaceTexture(v), roughness:0.5 }));
+  const diceGeo = new THREE.BoxGeometry(0.55,0.55,0.55);
+  const dice = new THREE.Mesh(diceGeo, diceMaterials);
+  dice.castShadow = true;
+  const diceRestY = 0.275; // = 骰子邊長0.55的一半，讓底面剛好貼齊地板(y=0)
+  dice.position.set(0, diceRestY, 3.4);
+  scene.add(dice);
+
+  let diceRolling = false;
+  // ---- 骰子碰撞用：中央擺設的概略碰撞圓（位置需對應各擺設實際座標，之後若擺設位置調整這裡要跟著改） ----
+  const DICE_OBSTACLES = [
+    { x:0,    z:0,    radius:2.0 },  // 金幣寶箱
+    { x:3.8,  z:-2.8, radius:1.7 },  // 對獎機
+    { x:-3.2, z:-2.9, radius:1.6 },  // 便利商店
+    { x:-3.6, z:3.2,  radius:0.2 },  // 回合看板（柱子）
+    { x:3.6,  z:3.2,  radius:0.6 },  // 裝飾地標
+  ];
+
+  function rollDice(onResult, forcedValue){
+    if(diceRolling) return;
+    diceRolling = true;
+    const resultFaceIdx = (forcedValue!=null) ? DICE_FACE_VALUE.indexOf(forcedValue) : Math.floor(Math.random()*6);
+    const resultValue = DICE_FACE_VALUE[resultFaceIdx];
+
+    // 目標朝向：讓該面法向對齊世界+Y，並疊加隨機Y軸旋轉增加變化
+    const targetQuat = new THREE.Quaternion().setFromUnitVectors(DICE_FACE_NORMAL[resultFaceIdx], new THREE.Vector3(0,1,0));
+    const spin = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.random()*Math.PI*2);
+    targetQuat.premultiply(spin);
+
+    const startPos = new THREE.Vector3(0, diceRestY, 3.4);
+    const pos = startPos.clone();
+
+    // 前進方向（水平面上的隨機方向）：撞到障礙物時這個方向會即時反彈改變
+    const travelAngle = Math.random()*Math.PI*2;
+    const travelDir = new THREE.Vector3(Math.cos(travelAngle), 0, Math.sin(travelAngle));
+    const totalBudget = 1.8 + Math.random()*1.4; // 總移動量預算（原本travelDist的概念）
+    const dieHalfSize = 0.275;
+    const DICE_COLLIDE_R = 0.3; // 骰子碰撞用的概略半徑
+
+    const duration = 2.4;
+    const settleStart = 0.72; // 最後28%的時間收斂到正確點數，前面都是真實滾動+反彈
+    const startTime = clock.getElapsedTime();
+    let lastFrameTime = startTime;
+    let settleBaseQuat = null;
+    let bounceCount = 0;
+    const MAX_BOUNCES = 5;
+
+    function step(){
+      const now = clock.getElapsedTime();
+      const dt = Math.min(0.05, now-lastFrameTime); // 避免分頁切換等造成dt過大
+      lastFrameTime = now;
+      const t = Math.min(1, (now-startTime)/duration);
+
+      if(t < settleStart){
+        // 速度隨時間遞減（模擬摩擦力減速），總積分約等於totalBudget
+        const speed = (totalBudget/(duration*settleStart)) * 2 * (1 - t/settleStart);
+        let remainMove = Math.max(0, speed*dt);
+        let guard = 0;
+        while(remainMove > 0.0002 && guard < 6){
+          guard++;
+          const nextPos = pos.clone().addScaledVector(travelDir, remainMove);
+          let bounced = false;
+          for(const ob of DICE_OBSTACLES){
+            const dx = nextPos.x-ob.x, dz = nextPos.z-ob.z;
+            const d = Math.sqrt(dx*dx+dz*dz);
+            const minDist = ob.radius + DICE_COLLIDE_R;
+            if(d < minDist && d > 0.0001){
+              // 反彈：沿碰撞法線鏡射前進方向
+              const nx = dx/d, nz = dz/d;
+              const dot = travelDir.x*nx + travelDir.z*nz;
+              travelDir.x -= 2*dot*nx;
+              travelDir.z -= 2*dot*nz;
+              travelDir.normalize();
+              pos.x = ob.x + nx*minDist;
+              pos.z = ob.z + nz*minDist;
+              bounced = true;
+              bounceCount++;
+              remainMove = (bounceCount>=MAX_BOUNCES) ? 0 : remainMove*0.55; // 反彈後損耗一些動能
+              break;
+            }
+          }
+          if(!bounced){ pos.copy(nextPos); remainMove = 0; }
+        }
+        dice.position.set(pos.x, diceRestY, pos.z);
+
+        // 旋轉：用「這一幀實際移動距離」換算滾動角度，滾動軸跟著當下travelDir走，
+        // 撞到障礙物反彈後，滾動方向會自然跟著改變，不會出現轉向跟移動方向對不起來的狀況
+        const frameDist = Math.max(0, speed*dt);
+        if(frameDist>0.00001){
+          const curRollAxis = new THREE.Vector3(travelDir.z, 0, -travelDir.x).normalize();
+          const frameAngle = frameDist / dieHalfSize;
+          const deltaQuat = new THREE.Quaternion().setFromAxisAngle(curRollAxis, frameAngle);
+          dice.quaternion.premultiply(deltaQuat);
+        }
+      } else {
+        // 收斂階段：位置不再移動，只把姿態平滑收斂到正確點數朝上
+        if(settleBaseQuat===null){ settleBaseQuat = dice.quaternion.clone(); }
+        const settleT = (t-settleStart)/(1-settleStart);
+        const settleEase = settleT*settleT*(3-2*settleT);
+        const blend = new THREE.Quaternion().copy(settleBaseQuat).slerp(targetQuat, settleEase);
+        dice.quaternion.copy(blend);
+      }
+
+      // 貼地滾動：只有很小幅度的觸地起伏（模擬翻滾時重心小幅上下），不再整段浮空
+      const bounceY = 0.05 * Math.abs(Math.sin(t*Math.PI*9)) * (1-t*t);
+      dice.position.y = diceRestY + bounceY;
+
+      if(t<1){ requestAnimationFrame(step); }
+      else{
+        dice.quaternion.copy(targetQuat);
+        dice.position.set(pos.x, diceRestY, pos.z);
+        diceRolling = false;
+        if(onResult) onResult(resultValue);
+      }
+    }
+    step();
+  }
+  // ================= 骰子結束 =================
+
+
+
+  // ================= 角色資料：4 選 1，實際 glb 檔案放在 games/ 資料夾裡 =================
+  // （index.html 本身放在倉庫根目錄，跟 games/ 不同層，所以路徑要多加 games/ 這一層，
+  //  跟 three_board_character_prototype.html 那份放在 games/ 裡面、可以直接用 ./ 不一樣）
+  const CHAR_DATA = [
+    { id:'char1', name:'長髮女生', emoji:'👩\u200d🦰', tag:'標準速度',
+      file:'./games/char1_longhair_woman.glb', targetHeight:0.24,
+      desc:'俐落的長髮女生，動作靈巧，適合新手上手。' },
+    { id:'char2', name:'肌肉猛男', emoji:'💪', tag:'力量型',
+      file:'./games/char2_muscular_man.glb', targetHeight:0.25,
+      desc:'渾身肌肉，走起路來虎虎生風，氣勢十足。' },
+    { id:'char3', name:'四足小狗', emoji:'🐕', tag:'特殊骨架',
+      file:'./games/char3_dog.glb', targetHeight:0.14,
+      desc:'四腳跑跳的可愛小狗，棋盤上的萌系代表。' },
+    { id:'char4', name:'泳裝女生', emoji:'👙', tag:'標準速度',
+      file:'./games/char4_woman_swim.glb', targetHeight:0.23,
+      desc:'活力十足的泳裝造型女生，走路帶風。' },
+  ];
+
+  // 這一段是原本單一角色解析流程的共用核心，抽出來給「自己選的角色」跟
+  // 「別的玩家選的角色」共用，不用寫兩次一樣的解析＋比例校正邏輯
+  function fetchAndBuildCharacter(file, targetHeight){
+    return fetch(file)
+      .then(res=>{
+        if(!res.ok) throw new Error('HTTP '+res.status+'：找不到 '+file);
+        return res.arrayBuffer();
+      })
+      .then(arrayBuffer=>{
+        const {json, bin} = parseGLB(arrayBuffer);
+        const { rootObj, clips, bindPose, nodeObjects } = buildSceneFromGLTF(json, bin);
+        rootObj.traverse(o=>{ if(o.isMesh || o.isSkinnedMesh){ o.castShadow = true; } });
+
+        // 這幾隻角色的骨架（Armature）節點本身帶有 0.01 縮放，而且角色的
+        // mesh 節點是 Armature 的子節點，導致解析出來的模型只有原本高度
+        // 的 1/100。這裡量測實際外接框高度，統一校正回符合棋盤比例的身高。
+        // 注意：校正用一個外層 wrapGroup 來縮放，不要直接改 rootObj.scale——
+        // buildSceneFromGLTF 內部的蒙皮／綁定運算會依賴 rootObj 自己原本的
+        // scale，直接改它會讓角色動畫跑位、整個炸開變成巨大的破圖。
+        rootObj.updateMatrixWorld(true);
+        const charBox = new THREE.Box3().setFromObject(rootObj);
+        const measuredHeight = charBox.max.y - charBox.min.y;
+        const TARGET_HEIGHT = targetHeight || 1.7;
+        let charRoot = rootObj;
+        if(measuredHeight > 0.00001 && Math.abs(measuredHeight - TARGET_HEIGHT) > 0.05){
+          const wrapGroup = new THREE.Group();
+          wrapGroup.add(rootObj);
+          wrapGroup.scale.setScalar(TARGET_HEIGHT / measuredHeight);
+          charRoot = wrapGroup;
+        }
+        return { rootObj: charRoot, clips, bindPose, nodeObjects };
+      });
+  }
+
+  // 自己選的角色：解析完存進 pendingModelData，跟原本 tryStartGame() 的合流邏輯銜接
+  function loadSelectedCharacterModel(charId){
+    const entry = CHAR_DATA.find(c=>c.id===charId) || CHAR_DATA[0];
+    setStatus('下載角色檔案中…（'+entry.name+'）');
+    progressEl.style.opacity='1';
+    progressEl.style.width='20%';
+    fetchAndBuildCharacter(entry.file, entry.targetHeight)
+      .then(data=>{
+        progressEl.style.width='100%';
+        pendingModelData = data;
+        setStatus('角色資料就緒，等待選擇遊戲設定…');
+        setTimeout(()=>{ progressEl.style.opacity='0'; }, 900);
+        tryStartGame();
+      })
+      .catch(err=>{
+        console.error(err);
+        setStatus('角色載入失敗：'+err.message);
+      });
+  }
+
+  // 別的玩家選的角色：直接把解析結果掛到那位玩家自己的 anchor 上，
+  // 取代原本什麼都不會動的圓錐體佔位棋子(createAIToken)
+  function attachRealCharacterToken(player, charId){
+    const entry = CHAR_DATA.find(c=>c.id===charId) || CHAR_DATA[0];
+    const anchor = new THREE.Group();
+    scene.add(anchor);
+    anchor.position.set(tilePositions[player.tileIndex].x, 0, tilePositions[player.tileIndex].z);
+    player.anchor = anchor; // 先掛上空的anchor，等模型載入完成再把模型塞進去，不擋住其他玩家先動起來
+    fetchAndBuildCharacter(entry.file, entry.targetHeight)
+      .then(data=>{
+        anchor.add(data.rootObj);
+        player.characterRef = {
+          rootObj: data.rootObj, clips: data.clips, bindPose: data.bindPose, nodeObjects: data.nodeObjects,
+          currentClip:null, clipStart:0, tileIndex: player.tileIndex
+        };
+      })
+      .catch(err=>{
+        console.error('other player character load failed', player.name, err);
+        // 保底：這位玩家的角色真的載入失敗的話，退回圓錐體佔位棋子，至少看得到人在哪
+        createAIToken(player);
+      });
+  }
+
+  // 角色資料現在改成使用者手動在「選擇角色」畫面點選才觸發載入
+  // （見 charSelectOverlay 那段 UI 互動），不再一開場就自動解析固定角色
+
+  const clock = new THREE.Clock();
+  let lastWorkPanelUpdate = -999;
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = 0.016;
+
+    if(transitioning){
+      camTarget.lerp(camDesiredTarget, 0.08);
+      camDist += (camDesiredDist-camDist)*0.08;
+      if(camTarget.distanceTo(camDesiredTarget)<0.01 && Math.abs(camDist-camDesiredDist)<0.01){ transitioning=false; }
+      applyCamera();
+    }
+
+    if(character && character.currentClip){
+      applyClipAtTime(character.currentClip, clock.getElapsedTime()-character.clipStart);
+    }
+    checkConstructionProgress();
+    updateTrainPosition();
+    checkWorkersProgress();
+    const nowSec = clock.getElapsedTime();
+    if(nowSec - lastWorkPanelUpdate >= 1){
+      lastWorkPanelUpdate = nowSec;
+      updateWorkPanel();
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  // ---- 拖曳旋轉鏡頭（不影響focusOn的target/dist，只調角度） ----
+  let dragging=false,lastX=0,lastY=0;
+  let dragMoved = false, dragStartX=0, dragStartY=0;
+  renderer.domElement.addEventListener('mousedown', e=>{
+    dragging=true; lastX=e.clientX; lastY=e.clientY;
+    dragStartX=e.clientX; dragStartY=e.clientY; dragMoved=false;
+  });
+  window.addEventListener('mousemove', e=>{
+    if(!dragging) return;
+    if(Math.abs(e.clientX-dragStartX) > 4 || Math.abs(e.clientY-dragStartY) > 4){ dragMoved = true; }
+    camAzim -= (e.clientX-lastX)*0.006;
+    camElev = Math.max(0.15, Math.min(1.4, camElev + (e.clientY-lastY)*0.006));
+    lastX=e.clientX; lastY=e.clientY;
+    applyCamera();
+  });
+  window.addEventListener('mouseup', ()=>dragging=false);
+  renderer.domElement.addEventListener('wheel', e=>{
+    e.preventDefault();
+    camDist = Math.max(1, Math.min(60, camDist*(1+e.deltaY*0.001)));
+    camDesiredDist = camDist;
+    applyCamera();
+  }, {passive:false});
+
+  // ---- 觸控支援（手機）：單指拖曳旋轉鏡頭、雙指縮放 ----
+  let touchMode = null; // 'rotate' | 'pinch'
+  let pinchStartDist = 0, pinchStartCamDist = 0;
+  function touchDist(t0, t1){
+    const dx = t0.clientX-t1.clientX, dy = t0.clientY-t1.clientY;
+    return Math.sqrt(dx*dx+dy*dy);
+  }
+  renderer.domElement.addEventListener('touchstart', e=>{
+    if(e.touches.length===1){
+      touchMode = 'rotate';
+      dragging = true;
+      lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+      dragStartX = lastX; dragStartY = lastY; dragMoved = false;
+    } else if(e.touches.length===2){
+      touchMode = 'pinch';
+      dragging = false;
+      pinchStartDist = touchDist(e.touches[0], e.touches[1]);
+      pinchStartCamDist = camDist;
+    }
+  }, {passive:true});
+  renderer.domElement.addEventListener('touchmove', e=>{
+    if(touchMode==='rotate' && e.touches.length===1){
+      e.preventDefault();
+      const x = e.touches[0].clientX, y = e.touches[0].clientY;
+      if(Math.abs(x-dragStartX) > 4 || Math.abs(y-dragStartY) > 4){ dragMoved = true; }
+      camAzim -= (x-lastX)*0.006;
+      camElev = Math.max(0.15, Math.min(1.4, camElev + (y-lastY)*0.006));
+      lastX = x; lastY = y;
+      applyCamera();
+    } else if(touchMode==='pinch' && e.touches.length===2){
+      e.preventDefault();
+      const d = touchDist(e.touches[0], e.touches[1]);
+      const scale = pinchStartDist / Math.max(1,d);
+      camDist = Math.max(1, Math.min(60, pinchStartCamDist*scale));
+      camDesiredDist = camDist;
+      applyCamera();
+    }
+  }, {passive:false});
+  renderer.domElement.addEventListener('touchend', e=>{
+    if(e.touches.length===0){ touchMode = null; dragging = false; }
+    else if(e.touches.length===1){
+      // 雙指放開一指，剩單指改回旋轉模式
+      touchMode = 'rotate'; dragging = true;
+      lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+    }
+  }, {passive:true});
+
+  window.addEventListener('resize', ()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ---- 手機直式時提示轉橫向；使用者可以按「我知道了」暫時關掉，重新轉向後會再次出現 ----
+  const rotateHintEl = document.getElementById('rotateHintOverlay');
+  const rotateHintDismissBtn = document.getElementById('rotateHintDismissBtn');
+  let rotateHintDismissed = false;
+  function updateRotateHint(){
+    if(rotateHintDismissed){ rotateHintEl.classList.remove('show'); return; }
+    rotateHintEl.classList.add('show');
+  }
+  rotateHintDismissBtn.addEventListener('click', ()=>{
+    rotateHintDismissed = true;
+    rotateHintEl.classList.remove('show');
+  });
+  window.addEventListener('resize', updateRotateHint);
+  window.addEventListener('orientationchange', ()=>{
+    rotateHintDismissed = false; // 換了方向就重置，下次轉回直式還是會提醒
+    setTimeout(updateRotateHint, 200);
+  });
+  updateRotateHint();
+})();
+</script>
+
+</body>
+</html>
