@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>房屋模型獨立測試工具</title>
+<style>
+  html,body{ margin:0; height:100%; background:#1b1e26; font-family:"Microsoft JhengHei",sans-serif; color:#eee; }
+  #topBar{ position:fixed; top:0; left:0; right:0; z-index:20; background:rgba(20,20,26,0.92); padding:10px 14px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; border-bottom:1px solid #444; }
+  #topBar label{ font-size:13px; }
+  #topBar select, #topBar button, #topBar input{ font-size:13px; padding:6px 10px; border-radius:8px; border:1px solid #555; background:#2a2d38; color:#eee; }
+  #topBar button{ cursor:pointer; background:#e8985a; color:#222; font-weight:700; border:none; }
+  #topBar button:hover{ background:#f0a86e; }
+  #logBox{ position:fixed; top:56px; left:0; width:420px; bottom:0; overflow-y:auto; background:rgba(10,10,14,0.9); padding:10px 12px; font-family:Consolas,monospace; font-size:12px; white-space:pre-wrap; z-index:15; border-right:1px solid #444; }
+  .log-ok{ color:#7cd992; }
+  .log-err{ color:#ff7a7a; }
+  .log-info{ color:#9ecbff; }
+  .log-warn{ color:#ffd479; }
+  #canvasWrap{ position:absolute; top:56px; left:420px; right:0; bottom:0; }
+  #resultGrid{ position:fixed; top:56px; left:420px; right:0; bottom:0; overflow-y:auto; padding:16px; display:none; }
+  .resultCard{ display:inline-block; width:260px; margin:8px; background:#2a2d38; border-radius:12px; padding:10px; vertical-align:top; }
+  .resultCard h3{ margin:4px 0; font-size:14px; }
+  .resultCard .status{ font-size:12px; padding:2px 8px; border-radius:8px; display:inline-block; margin-bottom:6px; }
+  .status-ok{ background:#2f5c3a; color:#a8f0b8; }
+  .status-fail{ background:#5c2f2f; color:#ffb0b0; }
+  .status-pending{ background:#5c542f; color:#ffe4a0; }
+  .thumbWrap{ width:100%; height:180px; background:#1b1e26; border-radius:8px; }
+</style>
+</head>
+<body>
+<div id="topBar">
+  <label>單一測試：</label>
+  <select id="levelSelect">
+    <option value="1">Lv.1 village_house.glb</option>
+    <option value="2">Lv.2 cyprys.glb</option>
+    <option value="3">Lv.3 kenney.glb</option>
+    <option value="4">Lv.4 building2.glb</option>
+  </select>
+  <button id="loadOneBtn">載入這一個</button>
+  <button id="loadAllBtn">全部 4 個一次測</button>
+  <span style="margin-left:16px;">或直接選檔案測試（不透過網址 fetch）：</span>
+  <input type="file" id="fileInput" accept=".glb">
+  <span id="statusText" style="margin-left:16px; font-weight:700;"></span>
+</div>
+<div id="logBox"></div>
+<div id="canvasWrap"></div>
+<div id="resultGrid"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+  const logBox = document.getElementById('logBox');
+  function log(msg, cls){
+    const div = document.createElement('div');
+    div.className = cls || '';
+    div.textContent = msg;
+    logBox.appendChild(div);
+    logBox.scrollTop = logBox.scrollHeight;
+    console.log(msg);
+  }
+
+  // ============ 以下區塊：直接從 index.html 原封不動複製過來，
+  // 確保測試結果跟正式遊戲裡的行為完全一致，不是另外重寫一套。 ============
+
+  function parseGLB(arrayBuffer){
+    const dv = new DataView(arrayBuffer);
+    if(dv.getUint32(0,true) !== 0x46546C67) throw new Error('不是有效的 glb 檔案');
+    const length = dv.getUint32(8,true);
+    let offset = 12, json=null, bin=null;
+    while(offset < length){
+      const chunkLength = dv.getUint32(offset,true); offset+=4;
+      const chunkType = dv.getUint32(offset,true); offset+=4;
+      const chunkData = arrayBuffer.slice(offset, offset+chunkLength);
+      if(chunkType === 0x4E4F534A){ json = JSON.parse(new TextDecoder('utf-8').decode(chunkData)); }
+      else if(chunkType === 0x004E4942){ bin = chunkData; }
+      offset += chunkLength;
+    }
+    return {json, bin};
+  }
+
+  const COMPONENT_CTORS = { 5126: Float32Array, 5125: Uint32Array, 5123: Uint16Array, 5121: Uint8Array, 5120: Int8Array, 5122: Int16Array };
+  const TYPE_COMPONENTS = { SCALAR:1, VEC2:2, VEC3:3, VEC4:4, MAT3:9, MAT4:16 };
+
+  function getAccessorArray(json, binBuffer, accessorIdx){
+    const acc = json.accessors[accessorIdx];
+    const compCount = TYPE_COMPONENTS[acc.type];
+    const Ctor = COMPONENT_CTORS[acc.componentType];
+    if(acc.bufferView === undefined){
+      return new Ctor(acc.count*compCount);
+    }
+    const bv = json.bufferViews[acc.bufferView];
+    const byteOffset = (bv.byteOffset||0) + (acc.byteOffset||0);
+    return new Ctor(binBuffer, byteOffset, acc.count*compCount);
+  }
+
+  function getImageBlobUrl(json, binBuffer, imageIdx){
+    const img = json.images[imageIdx];
+    const bv = json.bufferViews[img.bufferView];
+    const bytes = new Uint8Array(binBuffer, bv.byteOffset||0, bv.byteLength);
+    return URL.createObjectURL(new Blob([bytes], {type: img.mimeType || 'image/png'}));
+  }
+
+  function buildMaterial(json, binBuffer, matIdx){
+    let matOpts = { color:0xcccccc, side: THREE.DoubleSide, roughness:0.85, metalness:0.12 };
+    if(matIdx === undefined || !json.materials || !json.materials[matIdx]) return new THREE.MeshStandardMaterial(matOpts);
+    const mat = json.materials[matIdx];
+    const loader = new THREE.TextureLoader();
+    matOpts = { side: THREE.DoubleSide, metalness:0.12, roughness:0.9 };
+    function texFrom(texRef, isColor){
+      if(!texRef || texRef.index === undefined) return null;
+      const texDef = json.textures[texRef.index];
+      const url = getImageBlobUrl(json, binBuffer, texDef.source);
+      const tex = loader.load(url);
+      tex.flipY = false;
+      if(isColor && 'encoding' in tex) tex.encoding = THREE.sRGBEncoding;
+      return tex;
+    }
+    try{
+      const pbr = mat.pbrMetallicRoughness || {};
+      const baseColorTex = texFrom(pbr.baseColorTexture, true);
+      const normalTex = texFrom(mat.normalTexture, false);
+      const mrTex = texFrom(pbr.metallicRoughnessTexture, false);
+      const emissiveTex = texFrom(mat.emissiveTexture, true);
+      if(baseColorTex) matOpts.map = baseColorTex;
+      if(normalTex) matOpts.normalMap = normalTex;
+      if(mrTex){ matOpts.roughnessMap = mrTex; matOpts.roughness = 1; }
+      if(emissiveTex){ matOpts.emissiveMap = emissiveTex; matOpts.emissive = new THREE.Color(1,1,1); }
+      if(pbr.baseColorFactor) matOpts.color = new THREE.Color(pbr.baseColorFactor[0], pbr.baseColorFactor[1], pbr.baseColorFactor[2]);
+      if(typeof pbr.metallicFactor === 'number') matOpts.metalness = pbr.metallicFactor;
+      if(typeof pbr.roughnessFactor === 'number' && !mrTex) matOpts.roughness = pbr.roughnessFactor;
+    }catch(err){ console.warn('材質載入失敗，改用預設材質', err); }
+    return new THREE.MeshStandardMaterial(matOpts);
+  }
+
+  function buildStaticSceneFromGLTF(json, bin, targetFootprint){
+    const nodeObjects = {};
+    function buildNode(idx){
+      const def = json.nodes[idx];
+      if(!def){ return new THREE.Object3D(); }
+      const obj = new THREE.Object3D();
+      obj.name = def.name || ('node_'+idx);
+      if(def.translation) obj.position.fromArray(def.translation);
+      if(def.rotation) obj.quaternion.fromArray(def.rotation);
+      if(def.scale) obj.scale.fromArray(def.scale);
+      if(def.matrix){
+        const m = new THREE.Matrix4().fromArray(def.matrix);
+        m.decompose(obj.position, obj.quaternion, obj.scale);
+      }
+      nodeObjects[idx] = obj;
+      if(def.mesh !== undefined){
+        const meshDef = json.meshes[def.mesh];
+        meshDef.primitives.forEach(prim=>{
+          const attrs = prim.attributes;
+          const geometry = new THREE.BufferGeometry();
+          if(attrs.POSITION!==undefined) geometry.setAttribute('position', new THREE.BufferAttribute(getAccessorArray(json,bin,attrs.POSITION).slice(),3));
+          if(attrs.NORMAL!==undefined) geometry.setAttribute('normal', new THREE.BufferAttribute(getAccessorArray(json,bin,attrs.NORMAL).slice(),3));
+          if(attrs.TEXCOORD_0!==undefined) geometry.setAttribute('uv', new THREE.BufferAttribute(getAccessorArray(json,bin,attrs.TEXCOORD_0).slice(),2));
+          if(prim.indices!==undefined) geometry.setIndex(new THREE.BufferAttribute(getAccessorArray(json,bin,prim.indices).slice(),1));
+          if(!attrs.NORMAL) geometry.computeVertexNormals();
+          const material = buildMaterial(json, bin, prim.material);
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.castShadow = true; mesh.receiveShadow = true;
+          obj.add(mesh);
+        });
+      }
+      (def.children||[]).forEach(ci=>{ obj.add(buildNode(ci)); });
+      return obj;
+    }
+    const rootNodeIdx = json.scenes[json.scene||0].nodes[0];
+    const rootObj = buildNode(rootNodeIdx);
+
+    rootObj.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(rootObj);
+    const size = box.getSize(new THREE.Vector3());
+    const footprintNow = Math.max(size.x, size.z);
+    const scaleFactor = targetFootprint / footprintNow;
+    rootObj.scale.multiplyScalar(scaleFactor);
+    rootObj.updateMatrixWorld(true);
+
+    const box2 = new THREE.Box3().setFromObject(rootObj);
+    rootObj.position.y -= box2.min.y;
+
+    rootObj.updateMatrixWorld(true);
+    const box3 = new THREE.Box3().setFromObject(rootObj);
+    const center = box3.getCenter(new THREE.Vector3());
+    rootObj.position.x -= center.x;
+    rootObj.position.z -= center.z;
+
+    return rootObj;
+  }
+
+  // ============ 複製結束，以下是測試工具本身的邏輯 ============
+
+  const BUILDING_LEVEL_DATA = [
+    { level:1, file:'./games/village_house.glb', footprint:0.85 },
+    { level:2, file:'./games/cyprys.glb', footprint:1.0 },
+    { level:3, file:'./games/kenney.glb', footprint:1.1 },
+    { level:4, file:'./games/building2.glb', footprint:1.25 },
+  ];
+
+  let scene, camera, renderer, currentObj;
+  function initViewer(){
+    const wrap = document.getElementById('canvasWrap');
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1b1e26);
+    camera = new THREE.PerspectiveCamera(45, wrap.clientWidth/wrap.clientHeight, 0.01, 100);
+    camera.position.set(2.2, 1.8, 2.2);
+    camera.lookAt(0,0.4,0);
+    renderer = new THREE.WebGLRenderer({ antialias:true });
+    renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+    wrap.appendChild(renderer.domElement);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.1));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+    dir.position.set(3,5,2);
+    scene.add(dir);
+    const grid = new THREE.GridHelper(4, 8, 0x555555, 0x333333);
+    scene.add(grid);
+    window.addEventListener('resize', ()=>{
+      camera.aspect = wrap.clientWidth/wrap.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+    });
+    let angle = 0;
+    function animate(){
+      requestAnimationFrame(animate);
+      angle += 0.006;
+      camera.position.x = Math.sin(angle)*2.8;
+      camera.position.z = Math.cos(angle)*2.8;
+      camera.lookAt(0,0.4,0);
+      renderer.render(scene, camera);
+    }
+    animate();
+  }
+
+  function showInViewer(obj){
+    document.getElementById('resultGrid').style.display = 'none';
+    document.getElementById('canvasWrap').style.display = 'block';
+    if(currentObj) scene.remove(currentObj);
+    currentObj = obj;
+    scene.add(obj);
+  }
+
+  async function testOne(entry, arrayBufferOverride){
+    const statusText = document.getElementById('statusText');
+    statusText.textContent = '測試中：Lv.'+entry.level+' '+entry.file;
+    log('=== 開始測試 Lv.'+entry.level+'：'+entry.file+' ===', 'log-info');
+    const t0 = performance.now();
+    try{
+      let arrayBuffer;
+      if(arrayBufferOverride){
+        arrayBuffer = arrayBufferOverride;
+        log('使用手動選擇的檔案，略過網路 fetch', 'log-info');
+      } else {
+        log('fetch: '+entry.file+' …');
+        const res = await fetch(entry.file);
+        log('HTTP 狀態: '+res.status+' '+res.statusText, res.ok ? 'log-ok' : 'log-err');
+        if(!res.ok) throw new Error('HTTP '+res.status+'（檔案可能不存在於伺服器上，或路徑不對）');
+        arrayBuffer = await res.arrayBuffer();
+        log('下載完成，檔案大小：'+(arrayBuffer.byteLength/1024/1024).toFixed(2)+' MB', 'log-ok');
+      }
+      log('開始解析 GLB 二進位結構…');
+      const {json, bin} = parseGLB(arrayBuffer);
+      log('GLB 解析成功。nodes='+json.nodes.length+' meshes='+(json.meshes?json.meshes.length:0)+' materials='+(json.materials?json.materials.length:0)+' images='+(json.images?json.images.length:0), 'log-ok');
+      log('開始建構 3D 場景（buildStaticSceneFromGLTF）…');
+      const obj = buildStaticSceneFromGLTF(json, bin, entry.footprint);
+      const dt = (performance.now()-t0).toFixed(0);
+      log('✅ 成功！耗時 '+dt+'ms，footprint='+entry.footprint, 'log-ok');
+      statusText.textContent = '✅ Lv.'+entry.level+' 測試成功';
+      return { ok:true, obj, ms:dt };
+    } catch(err){
+      const dt = (performance.now()-t0).toFixed(0);
+      log('❌ 失敗（耗時 '+dt+'ms）：'+err.message, 'log-err');
+      log(err.stack || '', 'log-err');
+      statusText.textContent = '❌ Lv.'+entry.level+' 測試失敗，詳見左側紀錄';
+      return { ok:false, error:err.message };
+    }
+  }
+
+  document.getElementById('loadOneBtn').addEventListener('click', async ()=>{
+    const level = parseInt(document.getElementById('levelSelect').value);
+    const entry = BUILDING_LEVEL_DATA.find(d=>d.level===level);
+    const result = await testOne(entry);
+    if(result.ok) showInViewer(result.obj);
+  });
+
+  document.getElementById('loadAllBtn').addEventListener('click', async ()=>{
+    document.getElementById('canvasWrap').style.display = 'none';
+    const grid = document.getElementById('resultGrid');
+    grid.style.display = 'block';
+    grid.innerHTML = '';
+    const cards = {};
+    BUILDING_LEVEL_DATA.forEach(entry=>{
+      const card = document.createElement('div');
+      card.className = 'resultCard';
+      card.innerHTML = '<span class="status status-pending">測試中…</span><h3>Lv.'+entry.level+' '+entry.file+'</h3><div class="thumbWrap" id="thumb-'+entry.level+'"></div>';
+      grid.appendChild(card);
+      cards[entry.level] = card;
+    });
+    for(const entry of BUILDING_LEVEL_DATA){
+      const result = await testOne(entry);
+      const card = cards[entry.level];
+      const statusEl = card.querySelector('.status');
+      if(result.ok){
+        statusEl.textContent = '✅ 成功（'+result.ms+'ms）';
+        statusEl.className = 'status status-ok';
+        renderThumb('thumb-'+entry.level, result.obj);
+      } else {
+        statusEl.textContent = '❌ 失敗：'+result.error;
+        statusEl.className = 'status status-fail';
+      }
+    }
+    log('=== 全部 4 個測試完成 ===', 'log-info');
+  });
+
+  function renderThumb(elId, obj){
+    const el = document.getElementById(elId);
+    const w = el.clientWidth || 240, h = el.clientHeight || 180;
+    const sc = new THREE.Scene();
+    sc.background = new THREE.Color(0x1b1e26);
+    const cam = new THREE.PerspectiveCamera(45, w/h, 0.01, 100);
+    cam.position.set(1.6,1.3,1.6);
+    cam.lookAt(0,0.4,0);
+    sc.add(new THREE.HemisphereLight(0xffffff,0x444444,1.1));
+    const dir = new THREE.DirectionalLight(0xffffff,0.9);
+    dir.position.set(3,5,2);
+    sc.add(dir);
+    sc.add(obj);
+    const rend = new THREE.WebGLRenderer({ antialias:true });
+    rend.setSize(w,h);
+    el.appendChild(rend.domElement);
+    rend.render(sc, cam);
+  }
+
+  document.getElementById('fileInput').addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const level = parseInt(document.getElementById('levelSelect').value);
+    const entry = BUILDING_LEVEL_DATA.find(d=>d.level===level);
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await testOne(entry, arrayBuffer);
+    if(result.ok) showInViewer(result.obj);
+  });
+
+  initViewer();
+  log('測試工具就緒。可以用上方選單直接對伺服器上的檔案路徑測試（跟正式遊戲用的路徑完全一樣），或用「選檔案」手動挑一個 .glb 檔測試。', 'log-info');
+</script>
+</body>
+</html>
